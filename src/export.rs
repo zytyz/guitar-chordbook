@@ -34,9 +34,14 @@ pub fn write_catalog_pdf(catalog: &Catalog, path: &Path) -> io::Result<()> {
     if let Some(dir) = path.parent().filter(|dir| !dir.as_os_str().is_empty()) {
         fs::create_dir_all(dir)?;
     }
+    fs::write(path, render::to_pdf(&by_name(catalog))?)
+}
+
+/// Every stored chord sorted by name (ignoring case), the order used for printed sheets.
+pub fn by_name(catalog: &Catalog) -> Vec<&Chord> {
     let mut chords: Vec<&Chord> = catalog.chords().iter().collect();
     chords.sort_by_cached_key(|chord| chord.name.as_deref().unwrap_or("").to_lowercase());
-    fs::write(path, render::to_pdf(&chords)?)
+    chords
 }
 
 /// Writes one SVG per stored chord into `dir`, returning the paths written.

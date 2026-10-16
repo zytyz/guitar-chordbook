@@ -5,7 +5,7 @@ pub mod pdf;
 pub mod svg;
 
 pub use ascii::{to_ascii, to_text};
-pub use pdf::to_pdf;
+pub use pdf::{to_pdf, to_pdf_with};
 pub use svg::to_svg;
 
 /// Word wraps `text` to lines of at most `width` columns. Words longer than a

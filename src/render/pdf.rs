@@ -3,7 +3,8 @@
 use std::{collections::HashMap, io};
 
 use pdf_writer::{Content, Finish, Name, Pdf, Rect, Ref};
-use svg2pdf::{usvg, ConversionOptions};
+use svg2pdf::ConversionOptions;
+pub use svg2pdf::usvg;
 
 use super::svg;
 use crate::Chord;
@@ -21,9 +22,15 @@ const PER_PAGE: usize = COLUMNS * ROWS;
 pub fn to_pdf(chords: &[&Chord]) -> io::Result<Vec<u8>> {
     let mut options = usvg::Options::default();
     options.fontdb_mut().load_system_fonts();
+    to_pdf_with(chords, &options)
+}
+
+/// Like [`to_pdf`], but text is set with the fonts in `options` instead of the
+/// system fonts. Useful where system fonts cannot be found, such as on iOS.
+pub fn to_pdf_with(chords: &[&Chord], options: &usvg::Options) -> io::Result<Vec<u8>> {
     let trees = chords
         .iter()
-        .map(|chord| usvg::Tree::from_str(&svg::to_svg(chord), &options))
+        .map(|chord| usvg::Tree::from_str(&svg::to_svg(chord), options))
         .collect::<Result<Vec<_>, _>>()
         .map_err(io::Error::other)?;
 

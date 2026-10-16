@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Guitar Chordbook</title>
+<meta name="description" content="Build and browse your own catalog of guitar chord diagrams.">
+<meta name="theme-color" content="#f6f3ee" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#1c1b19" media="(prefers-color-scheme: dark)">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Guitar Chordbook">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icon-180.png">
+<link rel="stylesheet" href="style.css">
+<script type="module" src="app.js"></script>
+</head>
+<body>
+<header class="bar">
+  <div class="bar-row">
+    <h1>Guitar Chordbook</h1>
+    <span id="count" class="count"></span>
+    <div class="bar-actions">
+      <button id="new" class="primary" type="button">New chord</button>
+      <details class="menu" id="menu">
+        <summary aria-label="More actions">
+          <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/></svg>
+        </summary>
+        <div class="menu-list" role="menu">
+          <button type="button" role="menuitem" id="export-pdf">Export PDF<small>Four chords to an A4 page, by name</small></button>
+          <button type="button" role="menuitem" id="backup">Back up catalog<small>Download it as a JSON file</small></button>
+          <button type="button" role="menuitem" id="restore">Restore from file<small>A backup, or the terminal app's catalog.json</small></button>
+        </div>
+      </details>
+    </div>
+  </div>
+  <input id="search" type="search" placeholder="Search e.g. Am, x02210 or words in a note" aria-label="Search chords" autocomplete="off" spellcheck="false">
+</header>
+
+<main>
+  <ul id="grid" class="grid" aria-label="Chords"></ul>
+  <div id="empty" class="empty" hidden>
+    <p class="empty-title">No chords yet</p>
+    <p>Tap the fretboard to build a chord, give it a name, and it's saved in this browser.</p>
+    <button id="empty-new" class="primary" type="button">New chord</button>
+  </div>
+  <p id="no-match" class="empty" hidden></p>
+  <p id="loading" class="empty">Loading…</p>
+</main>
+
+<footer class="credit">© 2026 zytyz</footer>
+
+<dialog id="viewer" class="sheet" aria-labelledby="viewer-title">
+  <header class="sheet-bar">
+    <button type="button" class="plain" data-close>Close</button>
+    <h2 id="viewer-title"></h2>
+    <button type="button" class="plain strong" id="edit">Edit</button>
+  </header>
+  <div class="sheet-body">
+    <div id="viewer-diagram" class="diagram"></div>
+    <p class="shape-line">Shape <code id="viewer-shape"></code></p>
+    <div class="actions">
+      <button type="button" id="download-svg">Download SVG</button>
+      <button type="button" class="danger" id="delete">Delete</button>
+    </div>
+  </div>
+</dialog>
+
+<dialog id="editor" class="sheet" aria-labelledby="editor-title">
+  <form id="editor-form" novalidate>
+    <header class="sheet-bar">
+      <button type="button" class="plain" data-close>Cancel</button>
+      <h2 id="editor-title">New chord</h2>
+      <button type="submit" class="plain strong">Save</button>
+    </header>
+    <div class="sheet-body">
+      <label class="field">
+        <span>Name</span>
+        <input id="name" autocomplete="off" spellcheck="false" maxlength="40" placeholder="e.g. Cadd9">
+      </label>
+      <div class="board-wrap">
+        <svg id="board" class="board" role="group" aria-label="Fretboard"></svg>
+      </div>
+      <fieldset class="tools">
+        <legend>Finger label for the next tap</legend>
+        <div class="segmented" id="tools">
+          <label><input type="radio" name="finger" value="0" checked><span>None</span></label>
+          <label><input type="radio" name="finger" value="1"><span>1</span></label>
+          <label><input type="radio" name="finger" value="2"><span>2</span></label>
+          <label><input type="radio" name="finger" value="3"><span>3</span></label>
+          <label><input type="radio" name="finger" value="4"><span>4</span></label>
+        </div>
+      </fieldset>
+      <p class="hint">Tap above the nut to switch a string between open and muted. Tap a dot again to remove it.</p>
+      <p class="shape-line">Shape <code id="editor-shape"></code></p>
+      <label class="field">
+        <span>Note</span>
+        <textarea id="note" rows="3" placeholder="Optional. Printed under the diagram."></textarea>
+      </label>
+      <p id="editor-error" class="error" role="alert"></p>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="confirm" class="alert" aria-labelledby="confirm-text">
+  <form method="dialog">
+    <p id="confirm-text"></p>
+    <div class="alert-actions">
+      <button value="cancel" class="plain">Cancel</button>
+      <button value="ok" id="confirm-ok" class="danger-fill">OK</button>
+    </div>
+  </form>
+</dialog>
+
+<div id="toast" class="toast" role="status" hidden>
+  <span id="toast-text"></span>
+  <button type="button" id="toast-action" class="plain strong" hidden></button>
+</div>
+
+<input id="restore-file" type="file" accept="application/json,.json" hidden>
+</body>
+</html>

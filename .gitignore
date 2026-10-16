@@ -4,3 +4,4 @@
 # Keep personal catalogs out of the repo; only the format example is tracked.
 /chords/*
 !/chords/example-catalog.json
+/web/www/pkg
