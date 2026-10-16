@@ -5,7 +5,7 @@ use guitar::{render::wrap, Catalog};
 
 use super::{
     app::Command,
-    style::{fretboard, input_lines, Line, Role, NOTE_WIDTH},
+    style::{fretboard, text_box, Line, Role, NOTE_WIDTH},
     view::{Frame, Message, Tone},
 };
 
@@ -74,7 +74,7 @@ impl Viewer {
         let name = chord.name.as_deref().unwrap_or("?");
         let mut body = fretboard(chord, None);
         let note = match &self.state {
-            State::Note(buf) => input_lines(buf, Role::Note),
+            State::Note(buf) => text_box(buf, NOTE_WIDTH, true),
             _ if chord.note.is_empty() => Vec::new(),
             _ => wrap(&chord.note, NOTE_WIDTH)
                 .into_iter()

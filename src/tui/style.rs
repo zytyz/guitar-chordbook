@@ -28,9 +28,11 @@ pub enum Role {
     Marker,
     /// A chord's note.
     Note,
-    /// A text box and the caret inside it.
+    /// A text box with focus, and the caret inside it.
     Input,
     InputCaret,
+    /// A text box without focus.
+    Field,
 }
 
 /// Column width notes are wrapped to.
@@ -92,15 +94,35 @@ impl Line {
     }
 }
 
-/// Text being typed, wrapped to [`NOTE_WIDTH`] with a caret after the last character.
-pub fn input_lines(buf: &str, role: Role) -> Vec<Line> {
-    let mut lines: Vec<Line> = wrap(buf, NOTE_WIDTH - 1)
-        .into_iter()
-        .map(|text| Line::new().push(role, text))
-        .collect();
-    let last = lines.pop().unwrap_or_default();
-    lines.push(last.push(Role::Accent, "▏"));
-    lines
+/// A form field `width` columns wide holding `text`, wrapped onto as many
+/// rows as it needs. A focused field is highlighted and shows a caret after
+/// the last character.
+pub fn text_box(text: &str, width: usize, focused: bool) -> Vec<Line> {
+    let (role, caret) = match focused {
+        true => (Role::Input, Role::InputCaret),
+        false => (Role::Field, Role::Field),
+    };
+    // One column of padding on the left and one for the caret.
+    let inner = width.saturating_sub(2).max(1);
+    let mut rows = wrap(text, inner);
+    // Wrapping drops trailing spaces; keep one so the caret moves when a space is typed.
+    if focused && text.ends_with(' ') {
+        if let Some(last) = rows.last_mut().filter(|row| row.chars().count() < inner) {
+            last.push(' ');
+        }
+    }
+    let count = rows.len();
+    rows.into_iter()
+        .enumerate()
+        .map(|(i, row)| {
+            let fill = inner - row.chars().count();
+            let mark = if focused && i == count - 1 { "▏" } else { " " };
+            Line::new()
+                .push(role, format!(" {row}"))
+                .push(caret, mark)
+                .push(role, " ".repeat(fill))
+        })
+        .collect()
 }
 
 /// The chord as a colored tab grid. Same layout as [`render::to_ascii`], with
@@ -158,6 +180,18 @@ mod tests {
         assert_eq!(line.0.len(), 2);
         assert_eq!(line.text(), "abc");
         assert_eq!(line.pad(5).width(), 5);
+    }
+
+    #[test]
+    fn text_box_wraps_pads_and_shows_caret() {
+        let lines = text_box("barre at fret one", 10, true);
+        let texts: Vec<String> = lines.iter().map(Line::text).collect();
+        assert_eq!(texts, [" barre at ", " fret one▏"]);
+        assert_eq!(lines[1].text_in(Role::InputCaret), "▏");
+        // A trailing space stays visible while typing.
+        assert_eq!(text_box("ab ", 8, true)[0].text(), " ab ▏   ");
+        // Without focus there is no caret, and an empty field is still one row.
+        assert_eq!(text_box("", 6, false)[0].text(), "      ");
     }
 
     #[test]

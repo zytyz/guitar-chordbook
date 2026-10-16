@@ -249,13 +249,19 @@ mod tests {
         App::new(catalog, dir.0.join("catalog.json"), &dir.0)
     }
 
-    /// Sends keys: `\n` is Enter, `\x1b` is Esc, `\x08` is Backspace, anything else a character.
+    /// Sends keys: `\n` is Enter, `\x1b` is Esc, `\x08` is Backspace, `\t` is Tab,
+    /// arrows are arrow keys, and anything else is that character.
     fn press(app: &mut App, keys: &str) {
         for c in keys.chars() {
             let code = match c {
                 '\n' => KeyCode::Enter,
                 '\x1b' => KeyCode::Esc,
                 '\x08' => KeyCode::Backspace,
+                '\t' => KeyCode::Tab,
+                '↑' => KeyCode::Up,
+                '↓' => KeyCode::Down,
+                '←' => KeyCode::Left,
+                '→' => KeyCode::Right,
                 c => KeyCode::Char(c),
             };
             app.handle_key(KeyEvent::from(code));
@@ -298,9 +304,9 @@ mod tests {
     fn add_new_chord() {
         let dir = TempDir::new("add");
         let mut app = app(&dir);
-        // New chord named E: from high e, move down to A, place fret 2, then up to D.
-        press(&mut app, "anE\njjjjll k ");
-        press(&mut app, "s");
+        // New chord: type the name, arrow down past the note onto the
+        // fretboard, move down to A, place fret 2, then up to D, and save.
+        press(&mut app, "aE↓↓jjjjll k \n");
         assert_eq!(app.status, "saved to catalog");
         assert_eq!(app.catalog.chords()[0], named("E", "022000"));
         assert_eq!(Catalog::load(app.catalog_path()).unwrap().len(), 4);
@@ -312,22 +318,21 @@ mod tests {
         let mut app = app(&dir);
 
         // Same shape as G under a new name.
-        press(&mut app, "anG2\n");
-        press(&mut app, "lll jjjjj kh ");
+        press(&mut app, "aG2\t\tlll jjjjj kh ");
         let frame = app.frame(100, 40);
         assert_eq!(frame.subtitle, "320003");
-        assert_eq!(frame.body[0].text(), "name  G2");
-        press(&mut app, "s");
+        assert!(frame.body[0].text().starts_with("name   G2 "), "{:?}", frame.body[0].text());
+        press(&mut app, "\n");
         assert!(app.status.contains("same shape as G"), "{}", app.status);
         assert_eq!(app.frame(100, 40).message.unwrap().tone, Tone::Error);
         assert!(matches!(app.screen, Screen::Edit(_)));
 
-        // Same name as an existing chord.
-        press(&mut app, "n\x08\x08C\ns");
+        // Same name as an existing chord: tab round to the name field and retype it.
+        press(&mut app, "\t\x08\x08C\n");
         assert!(app.status.contains("named C already exists"), "{}", app.status);
 
-        // No name, on a shape nothing else has (lift the A string dot).
-        press(&mut app, "n\x08\n s");
+        // No name, on a shape nothing else has (back on the fretboard, lift the A string dot).
+        press(&mut app, "\x08\t\t \n");
         assert!(app.status.contains("needs a name"), "{}", app.status);
         assert_eq!(app.catalog.len(), 3);
     }
@@ -338,7 +343,7 @@ mod tests {
         let mut app = app(&dir);
         // Open Am (second), edit, add finger 2 on the D string's dot, save.
         press(&mut app, "j\ne");
-        press(&mut app, "jjjll2s");
+        press(&mut app, "jjjll2\n");
         assert_eq!(app.status, "saved to catalog");
         assert_eq!(app.catalog.len(), 3);
         assert_eq!(names(&app)[0], "Am");
@@ -375,7 +380,7 @@ mod tests {
     fn note_written_in_editor_is_stored() {
         let dir = TempDir::new("note-editor");
         let mut app = app(&dir);
-        press(&mut app, "anE\ncopen chord\njjjjll k s");
+        press(&mut app, "aE↓open chord↓jjjjll k \n");
         assert_eq!(app.status, "saved to catalog");
         assert_eq!(app.catalog.chords()[0].note, "open chord");
     }

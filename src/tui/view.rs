@@ -67,6 +67,7 @@ const FAINT: Color = Color::AnsiValue(240);
 const NOTE: Color = Color::AnsiValue(180);
 const OVERLAY_BG: Color = Color::AnsiValue(235);
 const INPUT_BG: Color = Color::AnsiValue(238);
+const FIELD_BG: Color = Color::AnsiValue(236);
 
 /// Rows above the body: the title bar and a blank line.
 pub const TOP_ROWS: usize = 2;
@@ -232,6 +233,7 @@ fn palette(role: Role) -> (Color, Option<Color>, bool) {
         Role::Note => (NOTE, None, false),
         Role::Input => (BRIGHT, Some(INPUT_BG), false),
         Role::InputCaret => (GREEN, Some(INPUT_BG), true),
+        Role::Field => (TEXT, Some(FIELD_BG), false),
     }
 }
 
