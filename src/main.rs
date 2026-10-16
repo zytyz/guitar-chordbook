@@ -81,9 +81,9 @@ fn run() -> io::Result<()> {
 const USAGE: &str = "usage: guitar [--catalog <file>] [--export [<dir>]] [--pdf [<file>]]";
 
 struct Options {
-    /// Catalog file. Defaults to `chords/catalog.json` in the project directory.
+    /// Catalog file. Defaults to `chords/catalog.json`.
     catalog: PathBuf,
-    /// Default directory for exported diagrams: `output/` in the project directory.
+    /// Default directory for exported diagrams: `output/`.
     output: PathBuf,
     /// Set by `--export`: write every chord as SVG here and exit.
     export: Option<PathBuf>,
@@ -93,10 +93,10 @@ struct Options {
 
 impl Options {
     fn parse(args: impl IntoIterator<Item = String>) -> io::Result<Self> {
-        let project = Path::new(env!("CARGO_MANIFEST_DIR"));
+        // Relative to where the app is started, which is meant to be the repo root.
         let mut options = Self {
-            catalog: project.join("chords").join("catalog.json"),
-            output: project.join("output"),
+            catalog: Path::new("chords").join("catalog.json"),
+            output: PathBuf::from("output"),
             export: None,
             pdf: None,
         };

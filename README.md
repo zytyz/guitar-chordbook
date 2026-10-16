@@ -9,7 +9,8 @@ diagrams (first five frets), with export to SVG and printable PDF.
 cargo run
 ```
 
-Chords are stored in `chords/catalog.json`. Exports go to `output/`.
+Chords are stored in `chords/catalog.json`. Exports go to `output/`. Both paths
+are relative to where the app is started, so run it from the root of the repo.
 
 ### Command line options
 
