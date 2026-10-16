@@ -2,7 +2,7 @@
 //! a note field and the fretboard, with focus moving between them.
 
 use crossterm::event::{KeyCode, KeyEvent};
-use guitar::{
+use guitar_chordbook::{
     chord::{Chord, MAX_FRET, STRINGS},
     Catalog, CatalogError,
 };
@@ -237,7 +237,7 @@ fn action_for(key: KeyEvent, focus: Focus) -> Option<Action> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use guitar::StringState;
+    use guitar_chordbook::StringState;
 
     /// An editor on an existing chord, so it starts on the fretboard.
     fn on_grid() -> Editor {

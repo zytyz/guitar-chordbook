@@ -1,5 +1,7 @@
 [package]
-name = "guitar"
+name = "guitar-chordbook"
+description = "A terminal app for building and browsing a catalog of guitar chord diagrams, with SVG and PDF export"
+repository = "https://github.com/zytyz/guitar-chordbook"
 version = "0.1.0"
 edition = "2024"
 

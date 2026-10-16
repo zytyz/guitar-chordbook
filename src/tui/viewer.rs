@@ -1,7 +1,7 @@
 //! Shows one stored chord, with actions to edit, annotate, export or delete it.
 
 use crossterm::event::{KeyCode, KeyEvent};
-use guitar::{render::wrap, Catalog};
+use guitar_chordbook::{render::wrap, Catalog};
 
 use super::{
     app::Command,

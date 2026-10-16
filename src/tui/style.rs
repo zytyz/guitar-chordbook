@@ -1,7 +1,7 @@
 //! Styled text for screen bodies. Screens tag spans with a semantic [`Role`]
 //! and the view decides the actual colors.
 
-use guitar::{
+use guitar_chordbook::{
     render::{self, wrap},
     Chord,
 };

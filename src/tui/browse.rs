@@ -3,7 +3,7 @@
 use std::path::PathBuf;
 
 use crossterm::event::{KeyCode, KeyEvent};
-use guitar::{render::wrap, Catalog};
+use guitar_chordbook::{render::wrap, Catalog};
 
 use super::{
     app::Command,

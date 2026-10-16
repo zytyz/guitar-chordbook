@@ -1,6 +1,6 @@
 //! Prints an SVG for a chord given as `<shape> [name]`, e.g. `cargo run --example export x32010 C`.
 
-use guitar::{render, Chord};
+use guitar_chordbook::{render, Chord};
 
 fn main() {
     let mut args = std::env::args().skip(1);

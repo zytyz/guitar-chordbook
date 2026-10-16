@@ -4,7 +4,7 @@
 use std::path::PathBuf;
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-use guitar::{export, Catalog, Chord};
+use guitar_chordbook::{export, Catalog, Chord};
 
 use super::{
     browse::{Browse, ExportDialog, ExportKind},
@@ -349,7 +349,7 @@ mod tests {
         assert_eq!(names(&app)[0], "Am");
         assert_eq!(
             app.catalog.chords()[0].strings[2],
-            guitar::StringState::Fretted { fret: 2, finger: Some(2) }
+            guitar_chordbook::StringState::Fretted { fret: 2, finger: Some(2) }
         );
     }
 

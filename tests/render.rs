@@ -1,4 +1,4 @@
-use guitar::{render, Chord};
+use guitar_chordbook::{render, Chord};
 
 fn c_major() -> Chord {
     let mut chord = Chord::from_shape("x32010").unwrap();

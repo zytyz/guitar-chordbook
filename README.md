@@ -65,12 +65,12 @@ already exists in the catalog.
 
 ## Library
 
-The crate is also a library: `guitar::Chord` models a shape,
-`guitar::Catalog` stores and searches chords, and `guitar::render` turns a
-chord into ASCII, SVG or PDF.
+The crate is also a library: `guitar_chordbook::Chord` models a shape,
+`guitar_chordbook::Catalog` stores and searches chords, and
+`guitar_chordbook::render` turns a chord into ASCII, SVG or PDF.
 
 ```rust
-use guitar::{render, Chord};
+use guitar_chordbook::{render, Chord};
 
 let mut chord = Chord::from_shape("x32010").unwrap();
 chord.name = Some("C".into());

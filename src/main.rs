@@ -12,7 +12,7 @@ use crossterm::{
     execute,
     terminal::{self, EnterAlternateScreen, LeaveAlternateScreen},
 };
-use guitar::{export, Catalog};
+use guitar_chordbook::{export, Catalog};
 use tui::{app::App, view};
 
 /// Puts the terminal into raw mode and restores it when dropped, including on panic.
@@ -37,7 +37,7 @@ fn main() -> ExitCode {
     match run() {
         Ok(()) => ExitCode::SUCCESS,
         Err(err) => {
-            eprintln!("guitar: {err}");
+            eprintln!("guitar-chordbook: {err}");
             ExitCode::FAILURE
         }
     }
@@ -78,7 +78,7 @@ fn run() -> io::Result<()> {
     Ok(())
 }
 
-const USAGE: &str = "usage: guitar [--catalog <file>] [--export [<dir>]] [--pdf [<file>]]";
+const USAGE: &str = "usage: guitar-chordbook [--catalog <file>] [--export [<dir>]] [--pdf [<file>]]";
 
 struct Options {
     /// Catalog file. Defaults to `chords/catalog.json`.

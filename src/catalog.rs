@@ -25,7 +25,7 @@ pub enum CatalogError {
 impl fmt::Display for CatalogError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::MissingName => write!(f, "the chord needs a name (press n)"),
+            Self::MissingName => write!(f, "the chord needs a name"),
             Self::DuplicateName(name) => write!(f, "a chord named {name} already exists"),
             Self::DuplicateShape(name) => write!(f, "same shape as {name}, which is already stored"),
         }
