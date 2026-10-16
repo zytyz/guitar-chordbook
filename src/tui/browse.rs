@@ -3,7 +3,7 @@
 use std::path::PathBuf;
 
 use crossterm::event::{KeyCode, KeyEvent};
-use guitar::Catalog;
+use guitar::{render::wrap, Catalog};
 
 use super::{
     app::Command,
@@ -130,7 +130,13 @@ impl Browse {
 
             // Preview the highlighted chord beside the list when there is room.
             let list_width = list.iter().map(Line::width).max().unwrap_or(0);
-            let preview = fretboard(chord(results[selected]), None);
+            let mut preview = fretboard(chord(results[selected]), None);
+            let note = &chord(results[selected]).note;
+            if !note.is_empty() {
+                let width = preview.iter().map(Line::width).max().unwrap_or(0);
+                preview.push(Line::new());
+                preview.extend(note_preview(note, width));
+            }
             let preview_width = preview.iter().map(Line::width).max().unwrap_or(0);
             if cols >= list_width + PREVIEW_GAP + preview_width + 4 {
                 for i in 0..list.len().max(preview.len()) {
@@ -178,4 +184,19 @@ impl Browse {
         self.searching = false;
         self.selected = 0;
     }
+}
+
+/// The first few wrapped lines of a note, with an ellipsis if it runs longer.
+fn note_preview(note: &str, width: usize) -> Vec<Line> {
+    const MAX_LINES: usize = 3;
+    let mut lines = wrap(note, width);
+    if lines.len() > MAX_LINES {
+        lines.truncate(MAX_LINES);
+        let last = &mut lines[MAX_LINES - 1];
+        while last.chars().count() + 1 > width {
+            last.pop();
+        }
+        last.push('…');
+    }
+    lines.into_iter().map(|text| Line::new().push(Role::Note, text)).collect()
 }

@@ -1,7 +1,10 @@
 //! Styled text for screen bodies. Screens tag spans with a semantic [`Role`]
 //! and the view decides the actual colors.
 
-use guitar::{render, Chord};
+use guitar::{
+    render::{self, wrap},
+    Chord,
+};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Role {
@@ -23,7 +26,12 @@ pub enum Role {
     SelectedDim,
     /// The bar at the left edge of the highlighted row.
     Marker,
+    /// A chord's note.
+    Note,
 }
+
+/// Column width notes are wrapped to.
+pub const NOTE_WIDTH: usize = 40;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Span {
@@ -79,6 +87,17 @@ impl Line {
     pub fn text_in(&self, role: Role) -> String {
         self.0.iter().filter(|span| span.role == role).map(|span| span.text.as_str()).collect()
     }
+}
+
+/// Text being typed, wrapped to [`NOTE_WIDTH`] with a caret after the last character.
+pub fn input_lines(buf: &str, role: Role) -> Vec<Line> {
+    let mut lines: Vec<Line> = wrap(buf, NOTE_WIDTH - 1)
+        .into_iter()
+        .map(|text| Line::new().push(role, text))
+        .collect();
+    let last = lines.pop().unwrap_or_default();
+    lines.push(last.push(Role::Accent, "▏"));
+    lines
 }
 
 /// The chord as a colored tab grid. Same layout as [`render::to_ascii`], with

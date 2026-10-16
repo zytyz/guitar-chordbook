@@ -1,55 +1,99 @@
-//! Shows one stored chord, with actions to edit, export or delete it.
+//! Shows one stored chord, with actions to edit, annotate, export or delete it.
 
 use crossterm::event::{KeyCode, KeyEvent};
-use guitar::Catalog;
+use guitar::{render::wrap, Catalog};
 
 use super::{
     app::Command,
-    style::fretboard,
+    style::{fretboard, input_lines, Line, Role, NOTE_WIDTH},
     view::{Frame, Message, Tone},
 };
+
+enum State {
+    Normal,
+    ConfirmDelete,
+    /// Typing the chord's note; holds the text so far.
+    Note(String),
+}
 
 pub struct Viewer {
     /// Catalog index of the chord on screen.
     pub index: usize,
-    confirm_delete: bool,
+    state: State,
 }
 
 impl Viewer {
     pub fn new(index: usize) -> Self {
-        Self { index, confirm_delete: false }
+        Self { index, state: State::Normal }
     }
 
-    pub fn handle_key(&mut self, key: KeyEvent) -> Option<Command> {
-        if self.confirm_delete {
-            self.confirm_delete = false;
-            return (key.code == KeyCode::Char('y')).then_some(Command::Delete(self.index));
-        }
-        match key.code {
-            KeyCode::Char('e') => Some(Command::Edit(self.index)),
-            KeyCode::Char('s') => Some(Command::Export(self.index)),
-            KeyCode::Char('d') => {
-                self.confirm_delete = true;
+    pub fn handle_key(&mut self, key: KeyEvent, catalog: &Catalog) -> Option<Command> {
+        match &mut self.state {
+            State::ConfirmDelete => {
+                self.state = State::Normal;
+                (key.code == KeyCode::Char('y')).then_some(Command::Delete(self.index))
+            }
+            State::Note(buf) => {
+                match key.code {
+                    KeyCode::Char(c) => buf.push(c),
+                    KeyCode::Backspace => {
+                        buf.pop();
+                    }
+                    KeyCode::Enter => {
+                        let note = std::mem::take(buf);
+                        self.state = State::Normal;
+                        return Some(Command::SetNote(self.index, note));
+                    }
+                    KeyCode::Esc => self.state = State::Normal,
+                    _ => {}
+                }
                 None
             }
-            KeyCode::Esc | KeyCode::Backspace | KeyCode::Left | KeyCode::Char('h') => {
-                Some(Command::Back)
-            }
-            KeyCode::Char('q') => Some(Command::Quit),
-            _ => None,
+            State::Normal => match key.code {
+                KeyCode::Char('e') => Some(Command::Edit(self.index)),
+                KeyCode::Char('c') => {
+                    self.state = State::Note(catalog.chords()[self.index].note.clone());
+                    None
+                }
+                KeyCode::Char('s') => Some(Command::Export(self.index)),
+                KeyCode::Char('d') => {
+                    self.state = State::ConfirmDelete;
+                    None
+                }
+                KeyCode::Esc | KeyCode::Backspace | KeyCode::Left | KeyCode::Char('h') => {
+                    Some(Command::Back)
+                }
+                KeyCode::Char('q') => Some(Command::Quit),
+                _ => None,
+            },
         }
     }
 
     pub fn render(&self, catalog: &Catalog) -> Frame {
         let chord = &catalog.chords()[self.index];
         let name = chord.name.as_deref().unwrap_or("?");
+        let mut body = fretboard(chord, None);
+        let note = match &self.state {
+            State::Note(buf) => input_lines(buf, Role::Note),
+            _ if chord.note.is_empty() => Vec::new(),
+            _ => wrap(&chord.note, NOTE_WIDTH)
+                .into_iter()
+                .map(|text| Line::new().push(Role::Note, text))
+                .collect(),
+        };
+        if !note.is_empty() {
+            body.push(Line::new());
+            body.extend(note);
+        }
+
         let mut frame = Frame {
             title: name.to_string(),
             subtitle: chord.shape(),
             mode: "CHORD",
-            body: fretboard(chord, None),
+            body,
             hints: vec![
                 ("e", "edit"),
+                ("c", "note"),
                 ("s", "export svg"),
                 ("d", "delete"),
                 ("esc", "back"),
@@ -57,13 +101,20 @@ impl Viewer {
             ],
             message: None,
         };
-        if self.confirm_delete {
-            frame.mode = "DELETE";
-            frame.hints = vec![("y", "delete"), ("any key", "keep")];
-            frame.message = Some(Message {
-                text: format!("Delete {name}?"),
-                tone: Tone::Warning,
-            });
+        match self.state {
+            State::Normal => {}
+            State::ConfirmDelete => {
+                frame.mode = "DELETE";
+                frame.hints = vec![("y", "delete"), ("any key", "keep")];
+                frame.message = Some(Message {
+                    text: format!("Delete {name}?"),
+                    tone: Tone::Warning,
+                });
+            }
+            State::Note(_) => {
+                frame.mode = "NOTE";
+                frame.hints = vec![("enter", "save"), ("esc", "cancel")];
+            }
         }
         frame
     }

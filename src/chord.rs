@@ -24,6 +24,9 @@ pub enum StringState {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Chord {
     pub name: Option<String>,
+    /// Free-form comments about the chord. Empty means no note.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub note: String,
     pub strings: [StringState; STRINGS],
 }
 
@@ -38,6 +41,7 @@ impl Chord {
     pub fn new() -> Self {
         Self {
             name: None,
+            note: String::new(),
             strings: [StringState::Open; STRINGS],
         }
     }

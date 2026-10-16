@@ -68,8 +68,8 @@ impl Catalog {
         self.chords.is_empty()
     }
 
-    /// Indices of chords whose name (ignoring case) or shape contains `query`,
-    /// in catalog order. An empty query matches everything.
+    /// Indices of chords whose name or note (ignoring case) or shape contains
+    /// `query`, in catalog order. An empty query matches everything.
     pub fn search(&self, query: &str) -> Vec<usize> {
         let query = query.trim().to_lowercase();
         self.chords
@@ -77,7 +77,9 @@ impl Catalog {
             .enumerate()
             .filter(|(_, chord)| {
                 let name = chord.name.as_deref().unwrap_or("").to_lowercase();
-                name.contains(&query) || chord.shape().contains(&query)
+                name.contains(&query)
+                    || chord.note.to_lowercase().contains(&query)
+                    || chord.shape().contains(&query)
             })
             .map(|(index, _)| index)
             .collect()
@@ -120,6 +122,12 @@ impl Catalog {
         self.chords.remove(index);
         self.chords.insert(0, chord);
         Ok(())
+    }
+
+    /// Replaces the note on the chord at `index` and moves it to the front.
+    pub fn set_note(&mut self, index: usize, note: &str) {
+        self.chords[index].note = note.trim().to_string();
+        self.touch(index);
     }
 
     /// Marks the chord at `index` as just browsed by moving it to the front.
@@ -215,6 +223,23 @@ mod tests {
         assert_eq!(catalog.search("am"), [1]);
         assert_eq!(catalog.search("x0"), [1]);
         assert!(catalog.search("dim").is_empty());
+    }
+
+    #[test]
+    fn notes_are_searchable_and_trimmed() {
+        let mut catalog = sample();
+        catalog.set_note(2, "  campfire strum  ");
+        assert_eq!(catalog.chords()[0].note, "campfire strum");
+        assert_eq!(catalog.search("CAMPFIRE"), [0]);
+    }
+
+    #[test]
+    fn loads_chords_saved_without_notes() {
+        let json = r#"{"chords":[{"name":"E","strings":["Open","Open","Open","Open","Open","Open"]}]}"#;
+        let catalog: Catalog = serde_json::from_str(json).unwrap();
+        assert_eq!(catalog.chords()[0].note, "");
+        // An empty note is left out of the file.
+        assert!(!serde_json::to_string(&catalog).unwrap().contains("note"));
     }
 
     #[test]

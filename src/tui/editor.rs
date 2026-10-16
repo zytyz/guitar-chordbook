@@ -3,12 +3,13 @@
 use crossterm::event::{KeyCode, KeyEvent};
 use guitar::{
     chord::{Chord, MAX_FRET, STRINGS},
+    render::wrap,
     Catalog, CatalogError,
 };
 
 use super::{
     app::Command,
-    style::{fretboard, Line, Role},
+    style::{fretboard, input_lines, Line, Role, NOTE_WIDTH},
     view::{Frame, Message, Tone},
 };
 
@@ -26,20 +27,27 @@ pub enum Action {
     Toggle,
     Mute,
     Finger(Option<u8>),
-    BeginRename,
+    BeginInput(Field),
     Type(char),
     Erase,
-    CommitRename,
-    CancelRename,
+    CommitInput,
+    CancelInput,
     Save,
     Cancel,
+}
+
+/// A text field of the chord that can be typed into.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Field {
+    Name,
+    Note,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Mode {
     Edit,
-    /// Editing the chord name; holds the text typed so far.
-    Rename(String),
+    /// Typing into a field; holds the text so far.
+    Input(Field, String),
 }
 
 pub struct Editor {
@@ -80,26 +88,33 @@ impl Editor {
                     return Some(Command::Warn("place a dot on this string first".into()));
                 }
             }
-            Action::BeginRename => {
-                self.mode = Mode::Rename(self.chord.name.clone().unwrap_or_default());
+            Action::BeginInput(field) => {
+                let current = match field {
+                    Field::Name => self.chord.name.clone().unwrap_or_default(),
+                    Field::Note => self.chord.note.clone(),
+                };
+                self.mode = Mode::Input(field, current);
             }
             Action::Type(c) => {
-                if let Mode::Rename(buf) = &mut self.mode {
+                if let Mode::Input(_, buf) = &mut self.mode {
                     buf.push(c);
                 }
             }
             Action::Erase => {
-                if let Mode::Rename(buf) = &mut self.mode {
+                if let Mode::Input(_, buf) = &mut self.mode {
                     buf.pop();
                 }
             }
-            Action::CommitRename => {
-                if let Mode::Rename(buf) = std::mem::replace(&mut self.mode, Mode::Edit) {
-                    let name = buf.trim();
-                    self.chord.name = (!name.is_empty()).then(|| name.to_string());
+            Action::CommitInput => {
+                if let Mode::Input(field, buf) = std::mem::replace(&mut self.mode, Mode::Edit) {
+                    let text = buf.trim().to_string();
+                    match field {
+                        Field::Name => self.chord.name = (!text.is_empty()).then_some(text),
+                        Field::Note => self.chord.note = text,
+                    }
                 }
             }
-            Action::CancelRename => self.mode = Mode::Edit,
+            Action::CancelInput => self.mode = Mode::Edit,
             Action::Save => {
                 return Some(Command::Store {
                     chord: self.chord.clone(),
@@ -118,14 +133,26 @@ impl Editor {
     }
 
     pub fn render(&self, catalog: &Catalog) -> Frame {
-        let name = match &self.mode {
-            Mode::Edit => match &self.chord.name {
+        let mut body = vec![Line::new().push(Role::Dim, "name  ").append(match &self.mode {
+            Mode::Input(Field::Name, buf) => Line::new().push(Role::Strong, buf).push(Role::Accent, "▏"),
+            _ => match &self.chord.name {
                 Some(name) => Line::new().push(Role::Strong, name),
-                None => Line::new().push(Role::Dim, "unnamed"),
+                None => Line::new().push(Role::Dim, "—"),
             },
-            Mode::Rename(buf) => Line::new().push(Role::Strong, buf).push(Role::Accent, "▏"),
+        })];
+        let note_lines = match &self.mode {
+            Mode::Input(Field::Note, buf) => input_lines(buf, Role::Note),
+            _ if self.chord.note.is_empty() => vec![Line::new().push(Role::Dim, "—")],
+            _ => wrap(&self.chord.note, NOTE_WIDTH)
+                .into_iter()
+                .map(|text| Line::new().push(Role::Note, text))
+                .collect(),
         };
-        let mut body = vec![Line::new().push(Role::Dim, "name  ").append(name), Line::new()];
+        for (i, line) in note_lines.into_iter().enumerate() {
+            let label = if i == 0 { "note  " } else { "      " };
+            body.push(Line::new().push(Role::Dim, label).append(line));
+        }
+        body.push(Line::new());
         body.extend(fretboard(&self.chord, Some(self.cursor)));
 
         // Warn about duplicates while editing, before the user tries to save.
@@ -144,11 +171,13 @@ impl Editor {
                     ("1-4", "finger"),
                     ("0", "clear finger"),
                     ("n", "name"),
+                    ("c", "note"),
                     ("s", "save"),
                     ("esc", "discard"),
                 ],
             ),
-            Mode::Rename(_) => ("NAME", vec![("enter", "confirm"), ("esc", "cancel")]),
+            Mode::Input(Field::Name, _) => ("NAME", vec![("enter", "confirm"), ("esc", "cancel")]),
+            Mode::Input(Field::Note, _) => ("NOTE", vec![("enter", "confirm"), ("esc", "cancel")]),
         };
         Frame {
             title: match self.original {
@@ -166,9 +195,9 @@ impl Editor {
 
 fn action_for(key: KeyEvent, mode: &Mode) -> Option<Action> {
     match mode {
-        Mode::Rename(_) => match key.code {
-            KeyCode::Enter => Some(Action::CommitRename),
-            KeyCode::Esc => Some(Action::CancelRename),
+        Mode::Input(..) => match key.code {
+            KeyCode::Enter => Some(Action::CommitInput),
+            KeyCode::Esc => Some(Action::CancelInput),
             KeyCode::Backspace => Some(Action::Erase),
             KeyCode::Char(c) => Some(Action::Type(c)),
             _ => None,
@@ -182,7 +211,8 @@ fn action_for(key: KeyEvent, mode: &Mode) -> Option<Action> {
             KeyCode::Char('x') => Some(Action::Mute),
             KeyCode::Char(c @ '1'..='4') => Some(Action::Finger(Some(c as u8 - b'0'))),
             KeyCode::Char('0') => Some(Action::Finger(None)),
-            KeyCode::Char('n') => Some(Action::BeginRename),
+            KeyCode::Char('n') => Some(Action::BeginInput(Field::Name)),
+            KeyCode::Char('c') => Some(Action::BeginInput(Field::Note)),
             KeyCode::Char('s') => Some(Action::Save),
             KeyCode::Esc => Some(Action::Cancel),
             _ => None,
@@ -256,19 +286,33 @@ mod tests {
     #[test]
     fn rename_commit_and_cancel() {
         let mut editor = editor();
-        editor.apply(Action::BeginRename);
+        editor.apply(Action::BeginInput(Field::Name));
         for c in "Cm7".chars() {
             editor.apply(Action::Type(c));
         }
         editor.apply(Action::Erase);
-        editor.apply(Action::CommitRename);
+        editor.apply(Action::CommitInput);
         assert_eq!(editor.chord.name.as_deref(), Some("Cm"));
         assert_eq!(editor.mode, Mode::Edit);
 
-        editor.apply(Action::BeginRename);
+        editor.apply(Action::BeginInput(Field::Name));
         editor.apply(Action::Type('x'));
-        editor.apply(Action::CancelRename);
+        editor.apply(Action::CancelInput);
         assert_eq!(editor.chord.name.as_deref(), Some("Cm"));
+    }
+
+    #[test]
+    fn note_input_edits_existing_note() {
+        let mut chord = Chord::new();
+        chord.note = "hi".into();
+        let mut editor = Editor::new(chord, None);
+        editor.apply(Action::BeginInput(Field::Note));
+        for c in " there ".chars() {
+            editor.apply(Action::Type(c));
+        }
+        editor.apply(Action::CommitInput);
+        assert_eq!(editor.chord.note, "hi there");
+        assert_eq!(editor.chord.name, None);
     }
 
     #[test]

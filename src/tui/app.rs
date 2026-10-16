@@ -33,6 +33,8 @@ pub enum Command {
     /// Add `chord` to the catalog, or replace the entry at `original`.
     Store { chord: Chord, original: Option<usize> },
     Delete(usize),
+    /// Replace the note on the chord at this index.
+    SetNote(usize, String),
     /// Write the chord at this index as `.svg` and `.txt` files.
     Export(usize),
     /// Ask where to export the whole catalog.
@@ -79,7 +81,7 @@ impl App {
         }
         let command = match &mut self.screen {
             Screen::Browse => self.browse.handle_key(key, &self.catalog),
-            Screen::View(viewer) => viewer.handle_key(key),
+            Screen::View(viewer) => viewer.handle_key(key, &self.catalog),
             Screen::Edit(editor) => editor.handle_key(key),
         };
         if let Some(command) = command {
@@ -131,6 +133,12 @@ impl App {
                     // Stay in the editor so nothing is lost.
                     Err(err) => self.report(Tone::Error, format!("not saved: {err}")),
                 }
+            }
+            Command::SetNote(index, note) => {
+                self.catalog.set_note(index, &note);
+                self.screen = Screen::View(Viewer::new(0));
+                self.report(Tone::Success, "note saved");
+                self.persist();
             }
             Command::Delete(index) => {
                 let chord = self.catalog.remove(index);
@@ -322,6 +330,38 @@ mod tests {
             app.catalog.chords()[0].strings[2],
             guitar::StringState::Fretted { fret: 2, finger: Some(2) }
         );
+    }
+
+    #[test]
+    fn note_from_chord_view() {
+        let dir = TempDir::new("note");
+        let mut app = app(&dir);
+        // Open G (third), write a note, save it.
+        press(&mut app, "jj\ncuse 3rd finger on e");
+        assert!(app.frame(100, 40).body.iter().any(|l| l.text().contains("use 3rd finger on e▏")));
+        press(&mut app, "\n");
+        assert_eq!(app.status, "note saved");
+        assert_eq!(app.catalog.chords()[0].note, "use 3rd finger on e");
+        assert_eq!(Catalog::load(app.catalog_path()).unwrap().chords()[0].note, "use 3rd finger on e");
+
+        // Esc while typing keeps the old note.
+        press(&mut app, "cxyz\x1b");
+        assert_eq!(app.catalog.chords()[0].note, "use 3rd finger on e");
+
+        // The catalog preview shows it, and search finds it.
+        press(&mut app, "\x1b/finger");
+        let body = app.frame(100, 40).body;
+        assert!(body.iter().any(|l| l.text_in(Role::Note).contains("use 3rd finger")), "{body:#?}");
+        assert_eq!(app.catalog.search("finger"), [0]);
+    }
+
+    #[test]
+    fn note_written_in_editor_is_stored() {
+        let dir = TempDir::new("note-editor");
+        let mut app = app(&dir);
+        press(&mut app, "anE\ncopen chord\njjjjll k s");
+        assert_eq!(app.status, "saved to catalog");
+        assert_eq!(app.catalog.chords()[0].note, "open chord");
     }
 
     #[test]

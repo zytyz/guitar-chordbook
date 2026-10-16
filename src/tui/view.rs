@@ -55,6 +55,7 @@ const TEXT: Color = Color::AnsiValue(252);
 const BRIGHT: Color = Color::AnsiValue(255);
 const DIM: Color = Color::AnsiValue(244);
 const FAINT: Color = Color::AnsiValue(240);
+const NOTE: Color = Color::AnsiValue(180);
 
 /// Rows above the body: the title bar and a blank line.
 pub const TOP_ROWS: usize = 2;
@@ -136,6 +137,10 @@ fn draw_line(out: &mut impl Write, line: &Line) -> io::Result<()> {
         if bold {
             queue!(out, SetAttribute(Attribute::Bold))?;
         }
+        // Notes are set in italics to read as commentary rather than data.
+        if span.role == Role::Note {
+            queue!(out, SetAttribute(Attribute::Italic))?;
+        }
         queue!(out, Print(&span.text), SetAttribute(Attribute::Reset), ResetColor)?;
     }
     Ok(())
@@ -157,6 +162,7 @@ fn palette(role: Role) -> (Color, Option<Color>, bool) {
         Role::Selected => (BRIGHT, Some(SEGMENT_BG), true),
         Role::SelectedDim => (DIM, Some(SEGMENT_BG), false),
         Role::Marker => (GREEN, None, false),
+        Role::Note => (NOTE, None, false),
     }
 }
 
