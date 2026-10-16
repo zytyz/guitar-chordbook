@@ -1,222 +1,340 @@
-//! Editor state and the actions that change it. No terminal code lives here.
+//! Top level state: which screen is showing, and the commands that move between screens
+//! and change the catalog. No terminal output happens here.
 
-use std::{fs, io, path::PathBuf};
+use std::path::PathBuf;
 
-use guitar::{
-    chord::{Chord, MAX_FRET, STRINGS},
-    render,
-};
+use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use guitar::{export, Catalog, Chord};
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Dir {
-    Up,
-    Down,
-    Left,
-    Right,
+use super::{browse::Browse, editor::Editor, viewer::Viewer};
+
+pub enum Screen {
+    Browse,
+    View(Viewer),
+    Edit(Editor),
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum Action {
-    Move(Dir),
-    Toggle,
-    Mute,
-    Finger(Option<u8>),
-    BeginRename,
-    Type(char),
-    Erase,
-    CommitRename,
-    CancelRename,
-    Save,
+/// What a screen asks the app to do in response to a key.
+#[derive(Debug, PartialEq, Eq)]
+pub enum Command {
+    /// Return to the catalog list.
+    Back,
+    /// Show the chord at this catalog index and mark it as browsed.
+    Open(usize),
+    /// Start the editor on an empty chord.
+    New,
+    /// Start the editor on the chord at this catalog index.
+    Edit(usize),
+    /// Add `chord` to the catalog, or replace the entry at `original`.
+    Store { chord: Chord, original: Option<usize> },
+    Delete(usize),
+    /// Write the chord at this index as `.svg` and `.txt` files.
+    Export(usize),
+    /// Ask where to export the whole catalog.
+    PromptExportAll,
+    /// Write an SVG for every stored chord into this directory.
+    ExportAll(PathBuf),
+    Status(String),
     Quit,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum Mode {
-    Edit,
-    /// Editing the chord name; holds the text typed so far.
-    Rename(String),
-}
-
 pub struct App {
-    pub chord: Chord,
-    /// `(string, fret)`. String 0 is low E; fret 0 is the open/mute column.
-    pub cursor: (usize, u8),
-    pub mode: Mode,
-    /// One line of feedback shown under the diagram.
+    pub catalog: Catalog,
+    /// Kept across screens so a search survives opening a chord and coming back.
+    pub browse: Browse,
+    pub screen: Screen,
+    /// One line of feedback shown at the bottom; cleared on every key.
     pub status: String,
     pub quit: bool,
-    out_dir: PathBuf,
+    catalog_path: PathBuf,
+    export_dir: PathBuf,
 }
 
 impl App {
-    /// A fresh editor that saves exported files into `out_dir`.
-    pub fn new(out_dir: impl Into<PathBuf>) -> Self {
+    pub fn new(catalog: Catalog, catalog_path: impl Into<PathBuf>, export_dir: impl Into<PathBuf>) -> Self {
         Self {
-            chord: Chord::new(),
-            cursor: (STRINGS - 1, 0),
-            mode: Mode::Edit,
+            catalog,
+            browse: Browse::default(),
+            screen: Screen::Browse,
             status: String::new(),
             quit: false,
-            out_dir: out_dir.into(),
+            catalog_path: catalog_path.into(),
+            export_dir: export_dir.into(),
         }
     }
 
-    pub fn apply(&mut self, action: Action) {
+    pub fn handle_key(&mut self, key: KeyEvent) {
         self.status.clear();
-        let (string, fret) = self.cursor;
-        match action {
-            // The diagram shows high e on top, so "up" means a higher string index.
-            Action::Move(Dir::Up) => self.cursor.0 = (string + 1).min(STRINGS - 1),
-            Action::Move(Dir::Down) => self.cursor.0 = string.saturating_sub(1),
-            Action::Move(Dir::Left) => self.cursor.1 = fret.saturating_sub(1),
-            Action::Move(Dir::Right) => self.cursor.1 = (fret + 1).min(MAX_FRET),
-            Action::Toggle => self.chord.toggle(string, fret),
-            Action::Mute => self.chord.toggle_mute(string),
-            Action::Finger(label) => {
-                if !self.chord.set_finger(string, label) {
-                    self.status = "place a dot on this string first".into();
+        if key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('c') {
+            self.quit = true;
+            return;
+        }
+        let command = match &mut self.screen {
+            Screen::Browse => self.browse.handle_key(key, &self.catalog),
+            Screen::View(viewer) => viewer.handle_key(key),
+            Screen::Edit(editor) => editor.handle_key(key),
+        };
+        if let Some(command) = command {
+            self.run(command);
+        }
+    }
+
+    pub fn render(&self, rows: usize) -> Vec<String> {
+        let mut lines = match &self.screen {
+            Screen::Browse => self.browse.render(&self.catalog, rows),
+            Screen::View(viewer) => viewer.render(&self.catalog),
+            Screen::Edit(editor) => editor.render(&self.catalog),
+        };
+        lines.push(String::new());
+        lines.push(self.status.clone());
+        lines
+    }
+
+    fn run(&mut self, command: Command) {
+        match command {
+            Command::Back => self.show_list(),
+            Command::Open(index) => {
+                self.catalog.touch(index);
+                self.screen = Screen::View(Viewer::new(0));
+                self.persist();
+            }
+            Command::New => self.screen = Screen::Edit(Editor::new(Chord::new(), None)),
+            Command::Edit(index) => {
+                let chord = self.catalog.chords()[index].clone();
+                self.screen = Screen::Edit(Editor::new(chord, Some(index)));
+            }
+            Command::Store { chord, original } => {
+                let result = match original {
+                    Some(index) => self.catalog.replace(index, chord),
+                    None => self.catalog.add(chord),
+                };
+                match result {
+                    Ok(()) => {
+                        self.status = "saved to catalog".into();
+                        self.screen = Screen::View(Viewer::new(0));
+                        self.persist();
+                    }
+                    // Stay in the editor so nothing is lost.
+                    Err(err) => self.status = format!("not saved: {err}"),
                 }
             }
-            Action::BeginRename => {
-                self.mode = Mode::Rename(self.chord.name.clone().unwrap_or_default());
+            Command::Delete(index) => {
+                let chord = self.catalog.remove(index);
+                self.status = format!("deleted {}", chord.name.as_deref().unwrap_or("?"));
+                self.show_list();
+                self.persist();
             }
-            Action::Type(c) => {
-                if let Mode::Rename(buf) = &mut self.mode {
-                    buf.push(c);
-                }
-            }
-            Action::Erase => {
-                if let Mode::Rename(buf) = &mut self.mode {
-                    buf.pop();
-                }
-            }
-            Action::CommitRename => {
-                if let Mode::Rename(buf) = std::mem::replace(&mut self.mode, Mode::Edit) {
-                    let name = buf.trim();
-                    self.chord.name = (!name.is_empty()).then(|| name.to_string());
-                }
-            }
-            Action::CancelRename => self.mode = Mode::Edit,
-            Action::Save => {
-                self.status = match self.save() {
-                    Ok(path) => format!("saved {}", path.display()),
-                    Err(err) => format!("save failed: {err}"),
+            Command::Export(index) => {
+                self.status = match export::write_chord(&self.catalog.chords()[index], &self.export_dir) {
+                    Ok(path) => format!("exported {}", path.display()),
+                    Err(err) => format!("export failed: {err}"),
                 };
             }
-            Action::Quit => self.quit = true,
+            Command::PromptExportAll => {
+                self.browse.export_prompt = Some(self.export_dir.display().to_string());
+            }
+            Command::ExportAll(dir) => {
+                self.status = match export::write_catalog(&self.catalog, &dir) {
+                    Ok(written) => format!("exported {} SVGs to {}", written.len(), dir.display()),
+                    Err(err) => format!("export failed: {err}"),
+                };
+                // Later exports this session default to the same place.
+                self.export_dir = dir;
+            }
+            Command::Status(status) => self.status = status,
+            Command::Quit => self.quit = true,
         }
     }
 
-    /// Writes `<stem>.svg` and `<stem>.txt`, returning the SVG path.
-    fn save(&self) -> io::Result<PathBuf> {
-        let stem = file_stem(&self.chord);
-        let svg = self.out_dir.join(format!("{stem}.svg"));
-        fs::write(&svg, render::to_svg(&self.chord))?;
-        fs::write(self.out_dir.join(format!("{stem}.txt")), render::to_text(&self.chord))?;
-        Ok(svg)
+    fn show_list(&mut self) {
+        self.browse.selected = 0;
+        self.screen = Screen::Browse;
     }
-}
 
-/// The chord name made safe for a file name, or the shape when unnamed.
-fn file_stem(chord: &Chord) -> String {
-    match &chord.name {
-        Some(name) => name
-            .chars()
-            .map(|c| if c.is_alphanumeric() || "#-_".contains(c) { c } else { '_' })
-            .collect(),
-        None => chord.shape(),
+    /// Saves the catalog, reporting failure in the status line.
+    fn persist(&mut self) {
+        if let Err(err) = self.catalog.save(&self.catalog_path) {
+            self.status = format!("could not write {}: {err}", self.catalog_path.display());
+        }
+    }
+
+    #[cfg(test)]
+    pub fn catalog_path(&self) -> &std::path::Path {
+        &self.catalog_path
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use guitar::StringState;
+    use std::fs;
 
-    fn app() -> App {
-        App::new(std::env::temp_dir())
+    /// A temporary directory removed when dropped.
+    struct TempDir(PathBuf);
+
+    impl TempDir {
+        fn new(name: &str) -> Self {
+            let dir = std::env::temp_dir().join(format!("guitar-{}-{name}", std::process::id()));
+            fs::create_dir_all(&dir).unwrap();
+            Self(dir)
+        }
+    }
+
+    impl Drop for TempDir {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.0);
+        }
+    }
+
+    fn named(name: &str, shape: &str) -> Chord {
+        let mut chord = Chord::from_shape(shape).unwrap();
+        chord.name = Some(name.into());
+        chord
+    }
+
+    /// An app over a catalog holding G, Am, C (newest first: C, Am, G).
+    fn app(dir: &TempDir) -> App {
+        let mut catalog = Catalog::default();
+        for (name, shape) in [("G", "320003"), ("Am", "x02210"), ("C", "x32010")] {
+            catalog.add(named(name, shape)).unwrap();
+        }
+        App::new(catalog, dir.0.join("catalog.json"), &dir.0)
+    }
+
+    /// Sends keys: `\n` is Enter, `\x1b` is Esc, `\x08` is Backspace, anything else a character.
+    fn press(app: &mut App, keys: &str) {
+        for c in keys.chars() {
+            let code = match c {
+                '\n' => KeyCode::Enter,
+                '\x1b' => KeyCode::Esc,
+                '\x08' => KeyCode::Backspace,
+                c => KeyCode::Char(c),
+            };
+            app.handle_key(KeyEvent::from(code));
+        }
+    }
+
+    fn names(app: &App) -> Vec<&str> {
+        app.catalog.chords().iter().map(|c| c.name.as_deref().unwrap()).collect()
     }
 
     #[test]
-    fn cursor_stays_on_the_grid() {
-        let mut app = app();
-        app.apply(Action::Move(Dir::Up));
-        app.apply(Action::Move(Dir::Left));
-        assert_eq!(app.cursor, (STRINGS - 1, 0));
-        for _ in 0..10 {
-            app.apply(Action::Move(Dir::Down));
-            app.apply(Action::Move(Dir::Right));
-        }
-        assert_eq!(app.cursor, (0, MAX_FRET));
+    fn opening_a_chord_moves_it_to_the_top() {
+        let dir = TempDir::new("open");
+        let mut app = app(&dir);
+        press(&mut app, "jj\n");
+        assert!(matches!(app.screen, Screen::View(Viewer { index: 0, .. })));
+        assert_eq!(names(&app), ["G", "C", "Am"]);
+        // The new order is persisted.
+        let saved = Catalog::load(app.catalog_path()).unwrap();
+        assert_eq!(saved, app.catalog);
     }
 
     #[test]
-    fn build_c_major() {
-        let mut app = app();
-        // Start on high e, open column. Walk down to low E and mute it.
-        for _ in 0..5 {
-            app.apply(Action::Move(Dir::Down));
-        }
-        app.apply(Action::Mute);
-        // A string, fret 3.
-        app.apply(Action::Move(Dir::Up));
-        for _ in 0..3 {
-            app.apply(Action::Move(Dir::Right));
-        }
-        app.apply(Action::Toggle);
-        app.apply(Action::Finger(Some(3)));
-        // D string, fret 2.
-        app.apply(Action::Move(Dir::Up));
-        app.apply(Action::Move(Dir::Left));
-        app.apply(Action::Toggle);
-        // B string, fret 1.
-        app.apply(Action::Move(Dir::Up));
-        app.apply(Action::Move(Dir::Up));
-        app.apply(Action::Move(Dir::Left));
-        app.apply(Action::Toggle);
-
-        assert_eq!(app.chord.shape(), "x32010");
-        assert_eq!(app.chord.strings[1], StringState::Fretted { fret: 3, finger: Some(3) });
+    fn search_then_open() {
+        let dir = TempDir::new("search");
+        let mut app = app(&dir);
+        press(&mut app, "/am");
+        assert!(app.render(40).iter().any(|l| l.contains("> Am")));
+        assert!(!app.render(40).iter().any(|l| l.contains("320003")));
+        press(&mut app, "\n");
+        assert_eq!(names(&app)[0], "Am");
+        // Going back keeps the search.
+        press(&mut app, "\x1b");
+        assert_eq!(app.browse.query, "am");
     }
 
     #[test]
-    fn finger_on_empty_string_reports_status() {
-        let mut app = app();
-        app.apply(Action::Finger(Some(1)));
-        assert!(!app.status.is_empty());
-        app.apply(Action::Move(Dir::Right));
+    fn add_new_chord() {
+        let dir = TempDir::new("add");
+        let mut app = app(&dir);
+        // New chord named E: from high e, move down to A, place fret 2, then up to D.
+        press(&mut app, "anE\njjjjll k ");
+        press(&mut app, "s");
+        assert_eq!(app.status, "saved to catalog");
+        assert_eq!(app.catalog.chords()[0], named("E", "022000"));
+        assert_eq!(Catalog::load(app.catalog_path()).unwrap().len(), 4);
+    }
+
+    #[test]
+    fn duplicates_are_rejected() {
+        let dir = TempDir::new("dup");
+        let mut app = app(&dir);
+
+        // Same shape as G under a new name.
+        press(&mut app, "anG2\n");
+        press(&mut app, "lll jjjjj kh ");
+        assert_eq!(app.render(40)[1], "Name: G2  (320003)");
+        press(&mut app, "s");
+        assert!(app.status.contains("same shape as G"), "{}", app.status);
+        assert!(matches!(app.screen, Screen::Edit(_)));
+
+        // Same name as an existing chord.
+        press(&mut app, "n\x08\x08C\ns");
+        assert!(app.status.contains("named C already exists"), "{}", app.status);
+
+        // No name, on a shape nothing else has (lift the A string dot).
+        press(&mut app, "n\x08\n s");
+        assert!(app.status.contains("needs a name"), "{}", app.status);
+        assert_eq!(app.catalog.len(), 3);
+    }
+
+    #[test]
+    fn edit_keeps_position_rules_and_allows_same_shape() {
+        let dir = TempDir::new("edit");
+        let mut app = app(&dir);
+        // Open Am (second), edit, add finger 2 on the D string's dot, save.
+        press(&mut app, "j\ne");
+        press(&mut app, "jjjll2s");
+        assert_eq!(app.status, "saved to catalog");
+        assert_eq!(app.catalog.len(), 3);
+        assert_eq!(names(&app)[0], "Am");
+        assert_eq!(
+            app.catalog.chords()[0].strings[2],
+            guitar::StringState::Fretted { fret: 2, finger: Some(2) }
+        );
+    }
+
+    #[test]
+    fn delete_needs_confirmation() {
+        let dir = TempDir::new("delete");
+        let mut app = app(&dir);
+        press(&mut app, "\ndn");
+        assert_eq!(app.catalog.len(), 3);
+        press(&mut app, "dy");
+        assert_eq!(names(&app), ["Am", "G"]);
+        assert!(matches!(app.screen, Screen::Browse));
+        assert_eq!(Catalog::load(app.catalog_path()).unwrap().len(), 2);
+    }
+
+    #[test]
+    fn export_all_prompts_with_default_dir() {
+        let dir = TempDir::new("export-all");
+        let mut app = app(&dir);
+        press(&mut app, "x");
+        assert_eq!(app.browse.export_prompt.as_deref(), Some(dir.0.to_str().unwrap()));
+        // Edit the suggested path to a subdirectory.
+        press(&mut app, "/svgs\n");
+        assert_eq!(app.browse.export_prompt, None);
+        assert!(app.status.starts_with("exported 3 SVGs"), "{}", app.status);
+        for name in ["C", "Am", "G"] {
+            assert!(dir.0.join("svgs").join(format!("{name}.svg")).exists());
+        }
+        // Esc cancels without writing.
+        press(&mut app, "x\x1b");
+        assert_eq!(app.browse.export_prompt, None);
         assert!(app.status.is_empty());
     }
 
     #[test]
-    fn rename_commit_and_cancel() {
-        let mut app = app();
-        app.apply(Action::BeginRename);
-        for c in "Cm7".chars() {
-            app.apply(Action::Type(c));
-        }
-        app.apply(Action::Erase);
-        app.apply(Action::CommitRename);
-        assert_eq!(app.chord.name.as_deref(), Some("Cm"));
-        assert_eq!(app.mode, Mode::Edit);
-
-        app.apply(Action::BeginRename);
-        app.apply(Action::Type('x'));
-        app.apply(Action::CancelRename);
-        assert_eq!(app.chord.name.as_deref(), Some("Cm"));
-    }
-
-    #[test]
-    fn save_writes_svg_and_text() {
-        let dir = std::env::temp_dir().join(format!("guitar-test-{}", std::process::id()));
-        fs::create_dir_all(&dir).unwrap();
-        let mut app = App::new(&dir);
-        app.chord = Chord::from_shape("x32010").unwrap();
-        app.chord.name = Some("C/G".into());
-        app.apply(Action::Save);
-        assert!(app.status.starts_with("saved"), "{}", app.status);
-        assert!(dir.join("C_G.svg").exists());
-        assert!(dir.join("C_G.txt").exists());
-        fs::remove_dir_all(dir).unwrap();
+    fn export_writes_files() {
+        let dir = TempDir::new("export");
+        let mut catalog = Catalog::default();
+        catalog.add(named("C/G", "332010")).unwrap();
+        let mut app = App::new(catalog, dir.0.join("catalog.json"), &dir.0);
+        press(&mut app, "\ns");
+        assert!(app.status.starts_with("exported"), "{}", app.status);
+        assert!(dir.0.join("C_G.svg").exists());
+        assert!(dir.0.join("C_G.txt").exists());
     }
 }

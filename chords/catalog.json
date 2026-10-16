@@ -1,0 +1,30 @@
+{
+  "chords": [
+    {
+      "name": "C",
+      "strings": [
+        "Muted",
+        {
+          "Fretted": {
+            "fret": 3,
+            "finger": 3
+          }
+        },
+        {
+          "Fretted": {
+            "fret": 2,
+            "finger": 2
+          }
+        },
+        "Open",
+        {
+          "Fretted": {
+            "fret": 1,
+            "finger": 1
+          }
+        },
+        "Open"
+      ]
+    }
+  ]
+}

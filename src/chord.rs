@@ -1,5 +1,7 @@
 //! Data model for a guitar chord shape within the first five frets.
 
+use serde::{Deserialize, Serialize};
+
 /// Number of strings on the instrument.
 pub const STRINGS: usize = 6;
 /// Highest fret a dot can be placed on.
@@ -8,7 +10,7 @@ pub const MAX_FRET: u8 = 5;
 pub const STRING_NAMES: [&str; STRINGS] = ["E", "A", "D", "G", "B", "e"];
 
 /// What a single string does in the chord.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum StringState {
     /// Not played (drawn as X above the nut).
     Muted,
@@ -19,7 +21,7 @@ pub enum StringState {
 }
 
 /// A chord shape: one state per string. Index 0 is the low E string.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Chord {
     pub name: Option<String>,
     pub strings: [StringState; STRINGS],
