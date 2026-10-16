@@ -12,6 +12,9 @@ cargo run
 Chords are stored in `chords/catalog.json`. Exports go to `output/`. Both paths
 are relative to where the app is started, so run it from the root of the repo.
 
+`chords/example-catalog.json` shows the file format; copy it to
+`chords/catalog.json` to start with an example chord.
+
 ### Command line options
 
 ```sh
