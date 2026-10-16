@@ -41,6 +41,15 @@ pub struct Frame {
     pub body: Vec<Line>,
     pub hints: Vec<Hint>,
     pub message: Option<Message>,
+    /// A floating box drawn over the middle of the screen.
+    pub overlay: Option<Overlay>,
+}
+
+#[derive(Debug, Default)]
+pub struct Overlay {
+    /// Shown in the top border.
+    pub title: String,
+    pub body: Vec<Line>,
 }
 
 // Palette (256 color codes), modelled on zellij's simplified status bar.
@@ -56,6 +65,8 @@ const BRIGHT: Color = Color::AnsiValue(255);
 const DIM: Color = Color::AnsiValue(244);
 const FAINT: Color = Color::AnsiValue(240);
 const NOTE: Color = Color::AnsiValue(180);
+const OVERLAY_BG: Color = Color::AnsiValue(235);
+const INPUT_BG: Color = Color::AnsiValue(238);
 
 /// Rows above the body: the title bar and a blank line.
 pub const TOP_ROWS: usize = 2;
@@ -80,7 +91,7 @@ pub fn draw(out: &mut impl Write, frame: &Frame, cols: u16, rows: u16) -> io::Re
     let y = top + ((space - shown) / 2) as u16;
     for (offset, line) in frame.body.iter().take(shown).enumerate() {
         queue!(out, MoveTo(x, y + offset as u16))?;
-        draw_line(out, line)?;
+        draw_line(out, line, None)?;
     }
 
     if let Some(message) = &frame.message {
@@ -100,7 +111,57 @@ pub fn draw(out: &mut impl Write, frame: &Frame, cols: u16, rows: u16) -> io::Re
             segment.draw(out)?;
         }
     }
+
+    if let Some(overlay) = &frame.overlay {
+        draw_overlay(out, overlay, width, usize::from(rows))?;
+    }
     out.flush()
+}
+
+/// Draws `overlay` as a bordered box centred on the screen:
+///
+/// ```text
+/// ╭─ Title ──────╮
+/// │              │
+/// │ body lines   │
+/// │              │
+/// ╰──────────────╯
+/// ```
+fn draw_overlay(out: &mut impl Write, overlay: &Overlay, cols: usize, rows: usize) -> io::Result<()> {
+    let title_len = overlay.title.chars().count();
+    let inner = overlay.body.iter().map(Line::width).max().unwrap_or(0).max(title_len + 2);
+    let width = inner + 4;
+    let height = overlay.body.len() + 4;
+    let x = (cols.saturating_sub(width) / 2) as u16;
+    let top = (rows.saturating_sub(height) / 2) as u16;
+
+    let blank = format!("│{}│", " ".repeat(width - 2));
+
+    queue!(out, MoveTo(x, top))?;
+    border(out, "╭─ ".into())?;
+    queue!(
+        out,
+        SetBackgroundColor(OVERLAY_BG),
+        SetForegroundColor(BRIGHT),
+        SetAttribute(Attribute::Bold),
+        Print(&overlay.title),
+        SetAttribute(Attribute::Reset)
+    )?;
+    border(out, format!(" {}╮", "─".repeat(width - 5 - title_len)))?;
+
+    queue!(out, MoveTo(x, top + 1))?;
+    border(out, blank.clone())?;
+    for (offset, line) in overlay.body.iter().enumerate() {
+        queue!(out, MoveTo(x, top + 2 + offset as u16))?;
+        border(out, "│ ".into())?;
+        draw_line(out, line, Some(OVERLAY_BG))?;
+        let fill = " ".repeat(inner - line.width());
+        border(out, format!("{fill} │"))?;
+    }
+    queue!(out, MoveTo(x, top + 2 + overlay.body.len() as u16))?;
+    border(out, blank)?;
+    queue!(out, MoveTo(x, top + 3 + overlay.body.len() as u16))?;
+    border(out, format!("╰{}╯", "─".repeat(width - 2)))
 }
 
 fn draw_title_bar(out: &mut impl Write, frame: &Frame, width: usize) -> io::Result<()> {
@@ -127,11 +188,17 @@ fn draw_title_bar(out: &mut impl Write, frame: &Frame, width: usize) -> io::Resu
     queue!(out, ResetColor)
 }
 
-fn draw_line(out: &mut impl Write, line: &Line) -> io::Result<()> {
+/// Draws part of an overlay's frame.
+fn border(out: &mut impl Write, text: String) -> io::Result<()> {
+    queue!(out, SetBackgroundColor(OVERLAY_BG), SetForegroundColor(GREEN), Print(text), ResetColor)
+}
+
+/// Draws the spans of `line`. Spans without a background of their own get `base`.
+fn draw_line(out: &mut impl Write, line: &Line, base: Option<Color>) -> io::Result<()> {
     for span in &line.0 {
         let (fg, bg, bold) = palette(span.role);
         queue!(out, SetForegroundColor(fg))?;
-        if let Some(bg) = bg {
+        if let Some(bg) = bg.or(base) {
             queue!(out, SetBackgroundColor(bg))?;
         }
         if bold {
@@ -163,6 +230,8 @@ fn palette(role: Role) -> (Color, Option<Color>, bool) {
         Role::SelectedDim => (DIM, Some(SEGMENT_BG), false),
         Role::Marker => (GREEN, None, false),
         Role::Note => (NOTE, None, false),
+        Role::Input => (BRIGHT, Some(INPUT_BG), false),
+        Role::InputCaret => (GREEN, Some(INPUT_BG), true),
     }
 }
 

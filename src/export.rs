@@ -25,6 +25,20 @@ pub fn write_chord(chord: &Chord, dir: &Path) -> io::Result<PathBuf> {
     Ok(svg)
 }
 
+/// File name used for the catalog PDF when only a directory is known.
+pub const PDF_NAME: &str = "chords.pdf";
+
+/// Writes every stored chord to a printable PDF at `path`, several diagrams
+/// per A4 page, sorted by name so the sheet reads like a book.
+pub fn write_catalog_pdf(catalog: &Catalog, path: &Path) -> io::Result<()> {
+    if let Some(dir) = path.parent().filter(|dir| !dir.as_os_str().is_empty()) {
+        fs::create_dir_all(dir)?;
+    }
+    let mut chords: Vec<&Chord> = catalog.chords().iter().collect();
+    chords.sort_by_cached_key(|chord| chord.name.as_deref().unwrap_or("").to_lowercase());
+    fs::write(path, render::to_pdf(&chords)?)
+}
+
 /// Writes one SVG per stored chord into `dir`, returning the paths written.
 /// Names that map to the same file (such as `C/G` and `C_G`) get a numeric suffix.
 pub fn write_catalog(catalog: &Catalog, dir: &Path) -> io::Result<Vec<PathBuf>> {
@@ -61,6 +75,18 @@ mod tests {
         assert_eq!(file_stem(&named("C/G", "332010")), "C_G");
         assert_eq!(file_stem(&named("F#m", "222000")), "F#m");
         assert_eq!(file_stem(&Chord::from_shape("x32010").unwrap()), "x32010");
+    }
+
+    #[test]
+    fn catalog_pdf_is_written() {
+        let dir = std::env::temp_dir().join(format!("guitar-pdf-{}", std::process::id()));
+        let mut catalog = Catalog::default();
+        catalog.add(named("G", "320003")).unwrap();
+        catalog.add(named("Am", "x02210")).unwrap();
+        let path = dir.join("nested").join(PDF_NAME);
+        write_catalog_pdf(&catalog, &path).unwrap();
+        assert!(fs::read(&path).unwrap().starts_with(b"%PDF-"));
+        fs::remove_dir_all(dir).unwrap();
     }
 
     #[test]

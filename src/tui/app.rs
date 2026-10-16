@@ -7,7 +7,7 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use guitar::{export, Catalog, Chord};
 
 use super::{
-    browse::Browse,
+    browse::{Browse, ExportDialog, ExportKind},
     editor::Editor,
     view::{Frame, Message, Tone},
     viewer::Viewer,
@@ -37,10 +37,10 @@ pub enum Command {
     SetNote(usize, String),
     /// Write the chord at this index as `.svg` and `.txt` files.
     Export(usize),
-    /// Ask where to export the whole catalog.
-    PromptExportAll,
-    /// Write an SVG for every stored chord into this directory.
-    ExportAll(PathBuf),
+    /// The export format was picked; ask where to write it.
+    ChooseExport(ExportKind),
+    /// Export the whole catalog: SVGs into a directory, or a PDF to a file.
+    ExportAll(ExportKind, PathBuf),
     /// Show a warning in the message line.
     Warn(String),
     Quit,
@@ -152,10 +152,17 @@ impl App {
                     Err(err) => self.report(Tone::Error, format!("export failed: {err}")),
                 }
             }
-            Command::PromptExportAll => {
-                self.browse.export_prompt = Some(self.export_dir.display().to_string());
+            Command::ChooseExport(kind) => {
+                let path = match kind {
+                    ExportKind::Svgs => self.export_dir.clone(),
+                    ExportKind::Pdf => self.export_dir.join(export::PDF_NAME),
+                };
+                self.browse.export = Some(ExportDialog::Destination {
+                    kind,
+                    path: path.display().to_string(),
+                });
             }
-            Command::ExportAll(dir) => {
+            Command::ExportAll(ExportKind::Svgs, dir) => {
                 match export::write_catalog(&self.catalog, &dir) {
                     Ok(written) => self.report(
                         Tone::Success,
@@ -165,6 +172,15 @@ impl App {
                 }
                 // Later exports this session default to the same place.
                 self.export_dir = dir;
+            }
+            Command::ExportAll(ExportKind::Pdf, path) => {
+                match export::write_catalog_pdf(&self.catalog, &path) {
+                    Ok(()) => self.report(Tone::Success, format!("exported {}", path.display())),
+                    Err(err) => self.report(Tone::Error, format!("export failed: {err}")),
+                }
+                if let Some(dir) = path.parent().filter(|dir| !dir.as_os_str().is_empty()) {
+                    self.export_dir = dir.to_path_buf();
+                }
             }
             Command::Warn(text) => self.report(Tone::Warning, text),
             Command::Quit => self.quit = true,
@@ -381,18 +397,47 @@ mod tests {
         let dir = TempDir::new("export-all");
         let mut app = app(&dir);
         press(&mut app, "x");
-        assert_eq!(app.browse.export_prompt.as_deref(), Some(dir.0.to_str().unwrap()));
+        assert_eq!(app.browse.export, Some(ExportDialog::Choose(ExportKind::Svgs)));
+        assert_eq!(app.frame(100, 40).overlay.unwrap().title, "Export");
+        press(&mut app, "\n");
+        assert_eq!(
+            app.browse.export,
+            Some(ExportDialog::Destination {
+                kind: ExportKind::Svgs,
+                path: dir.0.display().to_string(),
+            })
+        );
         // Edit the suggested path to a subdirectory.
         press(&mut app, "/svgs\n");
-        assert_eq!(app.browse.export_prompt, None);
+        assert_eq!(app.browse.export, None);
         assert!(app.status.starts_with("exported 3 SVGs"), "{}", app.status);
         for name in ["C", "Am", "G"] {
             assert!(dir.0.join("svgs").join(format!("{name}.svg")).exists());
         }
-        // Esc cancels without writing.
-        press(&mut app, "x\x1b");
-        assert_eq!(app.browse.export_prompt, None);
+        // Esc steps back from the destination to the choice, then closes.
+        press(&mut app, "x\n\x1b");
+        assert_eq!(app.browse.export, Some(ExportDialog::Choose(ExportKind::Svgs)));
+        press(&mut app, "\x1b");
+        assert_eq!(app.browse.export, None);
         assert!(app.status.is_empty());
+    }
+
+    #[test]
+    fn export_pdf_prompts_with_default_file() {
+        let dir = TempDir::new("export-pdf");
+        let mut app = app(&dir);
+        press(&mut app, "xj\n");
+        assert_eq!(
+            app.browse.export,
+            Some(ExportDialog::Destination {
+                kind: ExportKind::Pdf,
+                path: dir.0.join("chords.pdf").display().to_string(),
+            })
+        );
+        assert_eq!(app.frame(100, 40).overlay.unwrap().title, "Export PDF");
+        press(&mut app, "\n");
+        assert!(app.status.starts_with("exported"), "{}", app.status);
+        assert!(fs::read(dir.0.join("chords.pdf")).unwrap().starts_with(b"%PDF-"));
     }
 
     #[test]

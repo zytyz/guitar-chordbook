@@ -189,6 +189,7 @@ impl Editor {
             body,
             hints,
             message,
+            overlay: None,
         }
     }
 }

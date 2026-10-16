@@ -100,6 +100,7 @@ impl Viewer {
                 ("q", "quit"),
             ],
             message: None,
+            overlay: None,
         };
         match self.state {
             State::Normal => {}

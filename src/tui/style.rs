@@ -28,6 +28,9 @@ pub enum Role {
     Marker,
     /// A chord's note.
     Note,
+    /// A text box and the caret inside it.
+    Input,
+    InputCaret,
 }
 
 /// Column width notes are wrapped to.

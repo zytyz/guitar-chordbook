@@ -50,9 +50,15 @@ fn run() -> io::Result<()> {
         io::Error::new(err.kind(), format!("{}: {err}", options.catalog.display()))
     })?;
 
-    if let Some(dir) = options.export {
-        let written = export::write_catalog(&catalog, &dir)?;
-        println!("exported {} SVGs to {}", written.len(), dir.display());
+    if options.export.is_some() || options.pdf.is_some() {
+        if let Some(dir) = &options.export {
+            let written = export::write_catalog(&catalog, dir)?;
+            println!("exported {} SVGs to {}", written.len(), dir.display());
+        }
+        if let Some(path) = &options.pdf {
+            export::write_catalog_pdf(&catalog, path)?;
+            println!("exported {}", path.display());
+        }
         return Ok(());
     }
 
@@ -72,7 +78,7 @@ fn run() -> io::Result<()> {
     Ok(())
 }
 
-const USAGE: &str = "usage: guitar [--catalog <file>] [--export [<dir>]]";
+const USAGE: &str = "usage: guitar [--catalog <file>] [--export [<dir>]] [--pdf [<file>]]";
 
 struct Options {
     /// Catalog file. Defaults to `chords/catalog.json` in the project directory.
@@ -81,6 +87,8 @@ struct Options {
     output: PathBuf,
     /// Set by `--export`: write every chord as SVG here and exit.
     export: Option<PathBuf>,
+    /// Set by `--pdf`: write the catalog as a printable PDF here and exit.
+    pdf: Option<PathBuf>,
 }
 
 impl Options {
@@ -90,6 +98,7 @@ impl Options {
             catalog: project.join("chords").join("catalog.json"),
             output: project.join("output"),
             export: None,
+            pdf: None,
         };
         let mut args = args.into_iter().peekable();
         while let Some(arg) = args.next() {
@@ -97,10 +106,15 @@ impl Options {
                 "--catalog" => {
                     options.catalog = args.next().ok_or_else(|| io::Error::other(USAGE))?.into();
                 }
+                // The paths after these flags are optional, so only take the
+                // next argument when it is not another flag.
                 "--export" => {
-                    // The directory is optional, so only take the next argument if it is not a flag.
                     let dir = args.next_if(|next| !next.starts_with("--"));
                     options.export = Some(dir.map_or_else(|| options.output.clone(), PathBuf::from));
+                }
+                "--pdf" => {
+                    let file = args.next_if(|next| !next.starts_with("--"));
+                    options.pdf = Some(file.map_or_else(|| options.output.join(export::PDF_NAME), PathBuf::from));
                 }
                 _ => return Err(io::Error::other(USAGE)),
             }

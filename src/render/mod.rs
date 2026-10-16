@@ -1,9 +1,11 @@
 //! Renderers that turn a [`Chord`](crate::Chord) into a diagram.
 
 pub mod ascii;
+pub mod pdf;
 pub mod svg;
 
 pub use ascii::{to_ascii, to_text};
+pub use pdf::to_pdf;
 pub use svg::to_svg;
 
 /// Word wraps `text` to lines of at most `width` columns. Words longer than a
