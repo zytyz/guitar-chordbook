@@ -1,9 +1,13 @@
 //! Shows one stored chord, with actions to edit, export or delete it.
 
 use crossterm::event::{KeyCode, KeyEvent};
-use guitar::{render, Catalog};
+use guitar::Catalog;
 
-use super::app::Command;
+use super::{
+    app::Command,
+    style::fretboard,
+    view::{Frame, Message, Tone},
+};
 
 pub struct Viewer {
     /// Catalog index of the chord on screen.
@@ -36,17 +40,31 @@ impl Viewer {
         }
     }
 
-    pub fn render(&self, catalog: &Catalog) -> Vec<String> {
+    pub fn render(&self, catalog: &Catalog) -> Frame {
         let chord = &catalog.chords()[self.index];
         let name = chord.name.as_deref().unwrap_or("?");
-        let mut lines = vec![format!("{name}  ({})", chord.shape()), String::new()];
-        lines.extend(render::to_ascii(chord, None).lines().map(String::from));
-        lines.push(String::new());
-        lines.push(if self.confirm_delete {
-            format!("Delete {name}? y to confirm, any other key to keep it")
-        } else {
-            "e edit   s export svg   d delete   esc back   q quit".into()
-        });
-        lines
+        let mut frame = Frame {
+            title: name.to_string(),
+            subtitle: chord.shape(),
+            mode: "CHORD",
+            body: fretboard(chord, None),
+            hints: vec![
+                ("e", "edit"),
+                ("s", "export svg"),
+                ("d", "delete"),
+                ("esc", "back"),
+                ("q", "quit"),
+            ],
+            message: None,
+        };
+        if self.confirm_delete {
+            frame.mode = "DELETE";
+            frame.hints = vec![("y", "delete"), ("any key", "keep")];
+            frame.message = Some(Message {
+                text: format!("Delete {name}?"),
+                tone: Tone::Warning,
+            });
+        }
+        frame
     }
 }

@@ -5,11 +5,18 @@ use std::path::PathBuf;
 use crossterm::event::{KeyCode, KeyEvent};
 use guitar::Catalog;
 
-use super::app::Command;
+use super::{
+    app::Command,
+    style::{fretboard, Line, Role},
+    view::{Frame, Hint, TOP_ROWS},
+};
 
-/// Screen rows used by everything except the list itself (title, search,
-/// spacing, hints or the export prompt, and the status line).
-const LIST_OVERHEAD: usize = 9;
+/// Rows the view uses around the body: title bar and gap above, then a gap,
+/// the message line and up to two toolbar rows below.
+const CHROME_ROWS: usize = TOP_ROWS + 4;
+
+/// Columns between the list and the chord preview.
+const PREVIEW_GAP: usize = 6;
 
 #[derive(Debug, Default)]
 pub struct Browse {
@@ -77,45 +84,93 @@ impl Browse {
         None
     }
 
-    pub fn render(&self, catalog: &Catalog, rows: usize) -> Vec<String> {
+    pub fn render(&self, catalog: &Catalog, cols: usize, rows: usize) -> Frame {
         let results = catalog.search(&self.query);
-        let mut lines = vec![format!("Chord catalog: {} stored", catalog.len())];
-        if self.searching || !self.query.is_empty() {
-            let caret = if self.searching { "_" } else { "" };
-            lines.push(format!("Search: {}{caret}", self.query));
+        let mut body = Vec::new();
+        if let Some(dir) = &self.export_prompt {
+            body.push(Line::new().push(Role::Dim, "export to  ").push(Role::Text, dir).push(Role::Accent, "▏"));
+            body.push(Line::new());
+        } else if self.searching || !self.query.is_empty() {
+            let caret = if self.searching { "▏" } else { "" };
+            body.push(Line::new().push(Role::Dim, "/ ").push(Role::Text, &self.query).push(Role::Accent, caret));
+            body.push(Line::new());
         }
-        lines.push(String::new());
 
         if catalog.is_empty() {
-            lines.push("No chords yet. Press a to add one.".into());
+            body.push(Line::new().push(Role::Dim, "No chords yet"));
         } else if results.is_empty() {
-            lines.push(format!("No chords match \"{}\".", self.query));
+            body.push(Line::new().push(Role::Dim, "No matches"));
         } else {
             let selected = self.selected.min(results.len() - 1);
             // Scroll just far enough to keep the selection on screen.
-            let visible = rows.saturating_sub(LIST_OVERHEAD).max(1);
+            let visible = rows.saturating_sub(CHROME_ROWS + body.len()).max(1);
             let start = (selected + 1).saturating_sub(visible);
-            let name = |index: usize| catalog.chords()[index].name.as_deref().unwrap_or("?");
-            let width = results.iter().map(|&i| name(i).chars().count()).max().unwrap_or(0);
-            for (pos, &index) in results.iter().enumerate().skip(start).take(visible) {
-                let marker = if pos == selected { '>' } else { ' ' };
-                let shape = catalog.chords()[index].shape();
-                lines.push(format!("{marker} {:<width$}  {shape}", name(index)));
+            let chord = |index: usize| &catalog.chords()[index];
+            let name = |index: usize| chord(index).name.as_deref().unwrap_or("?");
+            let name_width = results.iter().map(|&i| name(i).chars().count()).max().unwrap_or(0).max(6);
+
+            let list: Vec<Line> = results
+                .iter()
+                .enumerate()
+                .skip(start)
+                .take(visible)
+                .map(|(pos, &index)| {
+                    let label = format!(" {:<name_width$}   ", name(index));
+                    let shape = format!("{} ", chord(index).shape());
+                    if pos == selected {
+                        Line::new()
+                            .push(Role::Marker, "▌")
+                            .push(Role::Selected, label)
+                            .push(Role::SelectedDim, shape)
+                    } else {
+                        Line::new().push(Role::Text, " ").push(Role::Text, label).push(Role::Dim, shape)
+                    }
+                })
+                .collect();
+
+            // Preview the highlighted chord beside the list when there is room.
+            let list_width = list.iter().map(Line::width).max().unwrap_or(0);
+            let preview = fretboard(chord(results[selected]), None);
+            let preview_width = preview.iter().map(Line::width).max().unwrap_or(0);
+            if cols >= list_width + PREVIEW_GAP + preview_width + 4 {
+                for i in 0..list.len().max(preview.len()) {
+                    let left = list.get(i).cloned().unwrap_or_default().pad(list_width + PREVIEW_GAP);
+                    body.push(left.append(preview.get(i).cloned().unwrap_or_default()));
+                }
+            } else {
+                body.extend(list);
             }
         }
 
-        lines.push(String::new());
-        if let Some(dir) = &self.export_prompt {
-            lines.push(format!("Export all SVGs to: {dir}_"));
-            lines.push("enter export   esc cancel".into());
-            return lines;
-        }
-        lines.push(if self.searching {
-            "type to filter   up/down select   enter open   esc clear".into()
+        let (mode, hints): (_, Vec<Hint>) = if self.export_prompt.is_some() {
+            ("EXPORT", vec![("enter", "export"), ("esc", "cancel")])
+        } else if self.searching {
+            ("SEARCH", vec![("a-z", "filter"), ("↑↓", "select"), ("enter", "open"), ("esc", "clear")])
         } else {
-            "up/down or jk select   enter open   / search   a add   x export all   q quit".into()
-        });
-        lines
+            (
+                "CATALOG",
+                vec![
+                    ("↑↓", "select"),
+                    ("enter", "open"),
+                    ("/", "search"),
+                    ("a", "add"),
+                    ("x", "export all"),
+                    ("q", "quit"),
+                ],
+            )
+        };
+        let count = match catalog.len() {
+            1 => "1 chord".to_string(),
+            n => format!("{n} chords"),
+        };
+        Frame {
+            title: "Chord Catalog".into(),
+            subtitle: count,
+            mode,
+            body,
+            hints,
+            message: None,
+        }
     }
 
     fn clear_search(&mut self) {

@@ -6,7 +6,12 @@ use std::path::PathBuf;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use guitar::{export, Catalog, Chord};
 
-use super::{browse::Browse, editor::Editor, viewer::Viewer};
+use super::{
+    browse::Browse,
+    editor::Editor,
+    view::{Frame, Message, Tone},
+    viewer::Viewer,
+};
 
 pub enum Screen {
     Browse,
@@ -34,7 +39,8 @@ pub enum Command {
     PromptExportAll,
     /// Write an SVG for every stored chord into this directory.
     ExportAll(PathBuf),
-    Status(String),
+    /// Show a warning in the message line.
+    Warn(String),
     Quit,
 }
 
@@ -43,8 +49,9 @@ pub struct App {
     /// Kept across screens so a search survives opening a chord and coming back.
     pub browse: Browse,
     pub screen: Screen,
-    /// One line of feedback shown at the bottom; cleared on every key.
+    /// One line of feedback shown above the toolbar; cleared on every key.
     pub status: String,
+    pub status_tone: Tone,
     pub quit: bool,
     catalog_path: PathBuf,
     export_dir: PathBuf,
@@ -57,6 +64,7 @@ impl App {
             browse: Browse::default(),
             screen: Screen::Browse,
             status: String::new(),
+            status_tone: Tone::Success,
             quit: false,
             catalog_path: catalog_path.into(),
             export_dir: export_dir.into(),
@@ -79,15 +87,21 @@ impl App {
         }
     }
 
-    pub fn render(&self, rows: usize) -> Vec<String> {
-        let mut lines = match &self.screen {
-            Screen::Browse => self.browse.render(&self.catalog, rows),
+    /// What to draw for a terminal of the given size.
+    pub fn frame(&self, cols: usize, rows: usize) -> Frame {
+        let mut frame = match &self.screen {
+            Screen::Browse => self.browse.render(&self.catalog, cols, rows),
             Screen::View(viewer) => viewer.render(&self.catalog),
             Screen::Edit(editor) => editor.render(&self.catalog),
         };
-        lines.push(String::new());
-        lines.push(self.status.clone());
-        lines
+        // Feedback from the last key wins over the screen's own message.
+        if !self.status.is_empty() {
+            frame.message = Some(Message {
+                text: self.status.clone(),
+                tone: self.status_tone,
+            });
+        }
+        frame
     }
 
     fn run(&mut self, command: Command) {
@@ -110,38 +124,41 @@ impl App {
                 };
                 match result {
                     Ok(()) => {
-                        self.status = "saved to catalog".into();
+                        self.report(Tone::Success, "saved to catalog");
                         self.screen = Screen::View(Viewer::new(0));
                         self.persist();
                     }
                     // Stay in the editor so nothing is lost.
-                    Err(err) => self.status = format!("not saved: {err}"),
+                    Err(err) => self.report(Tone::Error, format!("not saved: {err}")),
                 }
             }
             Command::Delete(index) => {
                 let chord = self.catalog.remove(index);
-                self.status = format!("deleted {}", chord.name.as_deref().unwrap_or("?"));
+                self.report(Tone::Success, format!("deleted {}", chord.name.as_deref().unwrap_or("?")));
                 self.show_list();
                 self.persist();
             }
             Command::Export(index) => {
-                self.status = match export::write_chord(&self.catalog.chords()[index], &self.export_dir) {
-                    Ok(path) => format!("exported {}", path.display()),
-                    Err(err) => format!("export failed: {err}"),
-                };
+                match export::write_chord(&self.catalog.chords()[index], &self.export_dir) {
+                    Ok(path) => self.report(Tone::Success, format!("exported {}", path.display())),
+                    Err(err) => self.report(Tone::Error, format!("export failed: {err}")),
+                }
             }
             Command::PromptExportAll => {
                 self.browse.export_prompt = Some(self.export_dir.display().to_string());
             }
             Command::ExportAll(dir) => {
-                self.status = match export::write_catalog(&self.catalog, &dir) {
-                    Ok(written) => format!("exported {} SVGs to {}", written.len(), dir.display()),
-                    Err(err) => format!("export failed: {err}"),
-                };
+                match export::write_catalog(&self.catalog, &dir) {
+                    Ok(written) => self.report(
+                        Tone::Success,
+                        format!("exported {} SVGs to {}", written.len(), dir.display()),
+                    ),
+                    Err(err) => self.report(Tone::Error, format!("export failed: {err}")),
+                }
                 // Later exports this session default to the same place.
                 self.export_dir = dir;
             }
-            Command::Status(status) => self.status = status,
+            Command::Warn(text) => self.report(Tone::Warning, text),
             Command::Quit => self.quit = true,
         }
     }
@@ -154,8 +171,14 @@ impl App {
     /// Saves the catalog, reporting failure in the status line.
     fn persist(&mut self) {
         if let Err(err) = self.catalog.save(&self.catalog_path) {
-            self.status = format!("could not write {}: {err}", self.catalog_path.display());
+            let text = format!("could not write {}: {err}", self.catalog_path.display());
+            self.report(Tone::Error, text);
         }
+    }
+
+    fn report(&mut self, tone: Tone, text: impl Into<String>) {
+        self.status = text.into();
+        self.status_tone = tone;
     }
 
     #[cfg(test)]
@@ -167,6 +190,7 @@ impl App {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::tui::style::Role;
     use std::fs;
 
     /// A temporary directory removed when dropped.
@@ -235,8 +259,10 @@ mod tests {
         let dir = TempDir::new("search");
         let mut app = app(&dir);
         press(&mut app, "/am");
-        assert!(app.render(40).iter().any(|l| l.contains("> Am")));
-        assert!(!app.render(40).iter().any(|l| l.contains("320003")));
+        let body = app.frame(100, 40).body;
+        let selected: String = body.iter().map(|l| l.text_in(Role::Selected)).collect();
+        assert_eq!(selected.trim(), "Am");
+        assert!(!body.iter().any(|l| l.text().contains("320003")));
         press(&mut app, "\n");
         assert_eq!(names(&app)[0], "Am");
         // Going back keeps the search.
@@ -264,9 +290,12 @@ mod tests {
         // Same shape as G under a new name.
         press(&mut app, "anG2\n");
         press(&mut app, "lll jjjjj kh ");
-        assert_eq!(app.render(40)[1], "Name: G2  (320003)");
+        let frame = app.frame(100, 40);
+        assert_eq!(frame.subtitle, "320003");
+        assert_eq!(frame.body[0].text(), "name  G2");
         press(&mut app, "s");
         assert!(app.status.contains("same shape as G"), "{}", app.status);
+        assert_eq!(app.frame(100, 40).message.unwrap().tone, Tone::Error);
         assert!(matches!(app.screen, Screen::Edit(_)));
 
         // Same name as an existing chord.

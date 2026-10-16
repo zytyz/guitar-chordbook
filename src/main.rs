@@ -60,8 +60,8 @@ fn run() -> io::Result<()> {
     let _guard = TerminalGuard::enter()?;
     let mut out = stdout();
     while !app.quit {
-        let (_, rows) = terminal::size()?;
-        view::draw(&mut out, &app.render(rows.into()))?;
+        let (cols, rows) = terminal::size()?;
+        view::draw(&mut out, &app.frame(cols.into(), rows.into()), cols, rows)?;
         if let Event::Key(key) = event::read()? {
             // Some platforms also report releases; only act on presses.
             if key.kind == KeyEventKind::Press {

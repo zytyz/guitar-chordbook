@@ -3,10 +3,14 @@
 use crossterm::event::{KeyCode, KeyEvent};
 use guitar::{
     chord::{Chord, MAX_FRET, STRINGS},
-    render, Catalog, CatalogError,
+    Catalog, CatalogError,
 };
 
-use super::app::Command;
+use super::{
+    app::Command,
+    style::{fretboard, Line, Role},
+    view::{Frame, Message, Tone},
+};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Dir {
@@ -73,7 +77,7 @@ impl Editor {
             Action::Mute => self.chord.toggle_mute(string),
             Action::Finger(label) => {
                 if !self.chord.set_finger(string, label) {
-                    return Some(Command::Status("place a dot on this string first".into()));
+                    return Some(Command::Warn("place a dot on this string first".into()));
                 }
             }
             Action::BeginRename => {
@@ -113,37 +117,50 @@ impl Editor {
         None
     }
 
-    pub fn render(&self, catalog: &Catalog) -> Vec<String> {
-        let heading = match self.original {
-            Some(_) => "Edit chord",
-            None => "New chord",
+    pub fn render(&self, catalog: &Catalog) -> Frame {
+        let name = match &self.mode {
+            Mode::Edit => match &self.chord.name {
+                Some(name) => Line::new().push(Role::Strong, name),
+                None => Line::new().push(Role::Dim, "unnamed"),
+            },
+            Mode::Rename(buf) => Line::new().push(Role::Strong, buf).push(Role::Accent, "▏"),
         };
-        let name_line = match &self.mode {
-            Mode::Edit => format!(
-                "Name: {}  ({})",
-                self.chord.name.as_deref().unwrap_or("(none)"),
-                self.chord.shape()
-            ),
-            Mode::Rename(buf) => format!("Name: {buf}_"),
-        };
-        let mut lines = vec![heading.to_string(), name_line, String::new()];
-        lines.extend(render::to_ascii(&self.chord, Some(self.cursor)).lines().map(String::from));
-        lines.push(String::new());
+        let mut body = vec![Line::new().push(Role::Dim, "name  ").append(name), Line::new()];
+        body.extend(fretboard(&self.chord, Some(self.cursor)));
 
         // Warn about duplicates while editing, before the user tries to save.
-        match catalog.validate(&self.chord, self.original) {
-            Ok(()) | Err(CatalogError::MissingName) => lines.push(String::new()),
-            Err(err) => lines.push(format!("! {err}")),
-        }
+        let message = match catalog.validate(&self.chord, self.original) {
+            Ok(()) | Err(CatalogError::MissingName) => None,
+            Err(err) => Some(Message { text: err.to_string(), tone: Tone::Warning }),
+        };
 
-        match self.mode {
-            Mode::Edit => {
-                lines.push("arrows/hjkl move   space toggle dot   x mute   1-4 finger   0 clear finger".into());
-                lines.push("n name   s save to catalog   esc discard".into());
-            }
-            Mode::Rename(_) => lines.push("type a name   enter confirm   esc cancel".into()),
+        let (mode, hints) = match self.mode {
+            Mode::Edit => (
+                "EDIT",
+                vec![
+                    ("↑↓←→", "move"),
+                    ("space", "dot"),
+                    ("x", "mute"),
+                    ("1-4", "finger"),
+                    ("0", "clear finger"),
+                    ("n", "name"),
+                    ("s", "save"),
+                    ("esc", "discard"),
+                ],
+            ),
+            Mode::Rename(_) => ("NAME", vec![("enter", "confirm"), ("esc", "cancel")]),
+        };
+        Frame {
+            title: match self.original {
+                Some(_) => "Edit Chord".into(),
+                None => "New Chord".into(),
+            },
+            subtitle: self.chord.shape(),
+            mode,
+            body,
+            hints,
+            message,
         }
-        lines
     }
 }
 
@@ -232,7 +249,7 @@ mod tests {
         let mut editor = editor();
         assert!(matches!(
             editor.apply(Action::Finger(Some(1))),
-            Some(Command::Status(_))
+            Some(Command::Warn(_))
         ));
     }
 
@@ -271,7 +288,8 @@ mod tests {
         catalog.add(c).unwrap();
 
         let editor = Editor::new(Chord::from_shape("x32010").unwrap(), None);
-        let lines = editor.render(&catalog);
-        assert!(lines.iter().any(|l| l.contains("same shape as C")), "{lines:#?}");
+        let message = editor.render(&catalog).message.unwrap();
+        assert!(message.text.contains("same shape as C"), "{message:?}");
+        assert_eq!(message.tone, Tone::Warning);
     }
 }
