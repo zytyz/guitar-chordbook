@@ -78,7 +78,7 @@ function renderList() {
     card.type = "button";
     card.className = "card";
     card.setAttribute("aria-label", chordName(chord));
-    // The core escapes names and notes, so its SVG is safe to insert.
+    // The core escapes names and comments, so its SVG is safe to insert.
     card.innerHTML = svg(chord);
     card.addEventListener("click", () => openViewer(index));
     item.append(card);
@@ -145,7 +145,7 @@ function openEditor(chord, index) {
   triedToSave = false;
   $("editor-title").textContent = index === null ? "New chord" : `Edit ${chordName(chord)}`;
   $("name").value = chord.name ?? "";
-  $("note").value = chord.note ?? "";
+  $("comment").value = chord.comment ?? "";
   document.querySelector('input[name="finger"][value="0"]').checked = true;
   renderBoard();
   check();
@@ -157,9 +157,9 @@ for (const button of [$("new"), $("empty-new")]) {
   button.addEventListener("click", () => openEditor(newChord(), null));
 }
 
-/** The draft with the name and note fields applied. */
+/** The draft with the name and comment fields applied. */
 function currentDraft() {
-  return { ...draft, name: $("name").value.trim() || null, note: $("note").value.trim() };
+  return { ...draft, name: $("name").value.trim() || null, comment: $("comment").value.trim() };
 }
 
 function selectedFinger() {
@@ -204,7 +204,7 @@ function showError(message) {
 }
 
 $("name").addEventListener("input", check);
-$("note").addEventListener("input", check);
+$("comment").addEventListener("input", check);
 
 $("editor-form").addEventListener("submit", (event) => {
   event.preventDefault();

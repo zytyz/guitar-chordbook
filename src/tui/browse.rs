@@ -184,11 +184,11 @@ impl Browse {
             // Preview the highlighted chord beside the list when there is room.
             let list_width = list.iter().map(Line::width).max().unwrap_or(0);
             let mut preview = fretboard(chord(results[selected]), None);
-            let note = &chord(results[selected]).note;
-            if !note.is_empty() {
+            let comment = &chord(results[selected]).comment;
+            if !comment.is_empty() {
                 let width = preview.iter().map(Line::width).max().unwrap_or(0);
                 preview.push(Line::new());
-                preview.extend(note_preview(note, width));
+                preview.extend(comment_preview(comment, width));
             }
             let preview_width = preview.iter().map(Line::width).max().unwrap_or(0);
             if cols >= list_width + PREVIEW_GAP + preview_width + 4 {
@@ -244,10 +244,10 @@ impl Browse {
     }
 }
 
-/// The first few wrapped lines of a note, with an ellipsis if it runs longer.
-fn note_preview(note: &str, width: usize) -> Vec<Line> {
+/// The first few wrapped lines of a comment, with an ellipsis if it runs longer.
+fn comment_preview(comment: &str, width: usize) -> Vec<Line> {
     const MAX_LINES: usize = 3;
-    let mut lines = wrap(note, width);
+    let mut lines = wrap(comment, width);
     if lines.len() > MAX_LINES {
         lines.truncate(MAX_LINES);
         let last = &mut lines[MAX_LINES - 1];
@@ -256,7 +256,7 @@ fn note_preview(note: &str, width: usize) -> Vec<Line> {
         }
         last.push('…');
     }
-    lines.into_iter().map(|text| Line::new().push(Role::Note, text)).collect()
+    lines.into_iter().map(|text| Line::new().push(Role::Comment, text)).collect()
 }
 
 /// The floating export dialog.

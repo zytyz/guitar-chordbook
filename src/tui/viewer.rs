@@ -5,15 +5,15 @@ use guitar_chordbook::{render::wrap, Catalog};
 
 use super::{
     app::Command,
-    style::{degree_strip, fretboard_with, text_box, Labels, Line, Role, NOTE_WIDTH},
+    style::{degree_strip, fretboard_with, text_box, Labels, Line, Role, COMMENT_WIDTH},
     view::{Frame, Message, Tone},
 };
 
 enum State {
     Normal,
     ConfirmDelete,
-    /// Typing the chord's note; holds the text so far.
-    Note(String),
+    /// Typing the chord's comment; holds the text so far.
+    Comment(String),
 }
 
 pub struct Viewer {
@@ -34,16 +34,16 @@ impl Viewer {
                 self.state = State::Normal;
                 (key.code == KeyCode::Char('y')).then_some(Command::Delete(self.index))
             }
-            State::Note(buf) => {
+            State::Comment(buf) => {
                 match key.code {
                     KeyCode::Char(c) => buf.push(c),
                     KeyCode::Backspace => {
                         buf.pop();
                     }
                     KeyCode::Enter => {
-                        let note = std::mem::take(buf);
+                        let comment = std::mem::take(buf);
                         self.state = State::Normal;
-                        return Some(Command::SetNote(self.index, note));
+                        return Some(Command::SetComment(self.index, comment));
                     }
                     KeyCode::Esc => self.state = State::Normal,
                     _ => {}
@@ -53,7 +53,7 @@ impl Viewer {
             State::Normal => match key.code {
                 KeyCode::Char('e') => Some(Command::Edit(self.index)),
                 KeyCode::Char('c') => {
-                    self.state = State::Note(catalog.chords()[self.index].note.clone());
+                    self.state = State::Comment(catalog.chords()[self.index].comment.clone());
                     None
                 }
                 KeyCode::Char('t') => {
@@ -85,17 +85,17 @@ impl Viewer {
             body.push(Line::new());
             body.extend(degree_strip(root, chord.formula));
         }
-        let note = match &self.state {
-            State::Note(buf) => text_box(buf, NOTE_WIDTH, true),
-            _ if chord.note.is_empty() => Vec::new(),
-            _ => wrap(&chord.note, NOTE_WIDTH)
+        let comment = match &self.state {
+            State::Comment(buf) => text_box(buf, COMMENT_WIDTH, true),
+            _ if chord.comment.is_empty() => Vec::new(),
+            _ => wrap(&chord.comment, COMMENT_WIDTH)
                 .into_iter()
-                .map(|text| Line::new().push(Role::Note, text))
+                .map(|text| Line::new().push(Role::Comment, text))
                 .collect(),
         };
-        if !note.is_empty() {
+        if !comment.is_empty() {
             body.push(Line::new());
-            body.extend(note);
+            body.extend(comment);
         }
 
         let mut frame = Frame {
@@ -105,10 +105,10 @@ impl Viewer {
             body,
             hints: vec![
                 ("e", "edit"),
-                ("c", "note"),
+                ("c", "comment"),
                 ("t", match self.labels {
-                    Labels::Fingers => "show notes",
-                    Labels::Notes => "show fingers",
+                    Labels::Fingers => "note names",
+                    Labels::Notes => "fingers",
                 }),
                 ("s", "export svg"),
                 ("d", "delete"),
@@ -128,8 +128,8 @@ impl Viewer {
                     tone: Tone::Warning,
                 });
             }
-            State::Note(_) => {
-                frame.mode = "NOTE";
+            State::Comment(_) => {
+                frame.mode = "COMMENT";
                 frame.hints = vec![("enter", "save"), ("esc", "cancel")];
             }
         }

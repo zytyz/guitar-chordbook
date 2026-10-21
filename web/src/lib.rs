@@ -2,7 +2,7 @@
 //!
 //! Chords cross into JavaScript as plain objects in the same shape as the
 //! catalog file, for example
-//! `{ name: "C", note: "", strings: ["Muted", { Fretted: { fret: 3, finger: null } }, ...] }`.
+//! `{ name: "C", comment: "", strings: ["Muted", { Fretted: { fret: 3, finger: null } }, ...] }`.
 //! Every rule (duplicate checks, recently used order, the open and muted cycle)
 //! stays in `guitar-chordbook`; this crate only checks that values from
 //! JavaScript are in range, so a bad call is an exception instead of a crash.
@@ -147,7 +147,7 @@ impl Chordbook {
         to_js(&self.catalog.chords())
     }
 
-    /// Positions of chords whose name, note or shape contains `query`.
+    /// Positions of chords whose name, comment or shape contains `query`.
     pub fn search(&self, query: &str) -> Vec<usize> {
         self.catalog.search(query)
     }
@@ -170,11 +170,11 @@ impl Chordbook {
         Ok(self.catalog.replace(index, chord_from_js(chord)?)?)
     }
 
-    /// Replaces the note on the chord at `index` and moves it to the front.
-    #[wasm_bindgen(js_name = setNote)]
-    pub fn set_note(&mut self, index: usize, note: &str) -> Result<(), JsError> {
+    /// Replaces the comment on the chord at `index` and moves it to the front.
+    #[wasm_bindgen(js_name = setComment)]
+    pub fn set_comment(&mut self, index: usize, comment: &str) -> Result<(), JsError> {
         let index = self.check_index(index)?;
-        self.catalog.set_note(index, note);
+        self.catalog.set_comment(index, comment);
         Ok(())
     }
 

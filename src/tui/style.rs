@@ -30,8 +30,8 @@ pub enum Role {
     SelectedDim,
     /// The bar at the left edge of the highlighted row.
     Marker,
-    /// A chord's note.
-    Note,
+    /// A chord's comment.
+    Comment,
     /// A text box with focus, and the caret inside it.
     Input,
     InputCaret,
@@ -39,8 +39,8 @@ pub enum Role {
     Field,
 }
 
-/// Column width notes are wrapped to.
-pub const NOTE_WIDTH: usize = 40;
+/// Column width comments are wrapped to.
+pub const COMMENT_WIDTH: usize = 40;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Span {

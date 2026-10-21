@@ -64,7 +64,7 @@ const TEXT: Color = Color::AnsiValue(252);
 const BRIGHT: Color = Color::AnsiValue(255);
 const DIM: Color = Color::AnsiValue(244);
 const FAINT: Color = Color::AnsiValue(240);
-const NOTE: Color = Color::AnsiValue(180);
+const COMMENT: Color = Color::AnsiValue(180);
 const OVERLAY_BG: Color = Color::AnsiValue(235);
 const INPUT_BG: Color = Color::AnsiValue(238);
 const FIELD_BG: Color = Color::AnsiValue(236);
@@ -206,7 +206,7 @@ fn draw_line(out: &mut impl Write, line: &Line, base: Option<Color>) -> io::Resu
             queue!(out, SetAttribute(Attribute::Bold))?;
         }
         // Notes are set in italics to read as commentary rather than data.
-        if span.role == Role::Note {
+        if span.role == Role::Comment {
             queue!(out, SetAttribute(Attribute::Italic))?;
         }
         queue!(out, Print(&span.text), SetAttribute(Attribute::Reset), ResetColor)?;
@@ -231,7 +231,7 @@ fn palette(role: Role) -> (Color, Option<Color>, bool) {
         Role::Selected => (BRIGHT, Some(SEGMENT_BG), true),
         Role::SelectedDim => (DIM, Some(SEGMENT_BG), false),
         Role::Marker => (GREEN, None, false),
-        Role::Note => (NOTE, None, false),
+        Role::Comment => (COMMENT, None, false),
         Role::Input => (BRIGHT, Some(INPUT_BG), false),
         Role::InputCaret => (GREEN, Some(INPUT_BG), true),
         Role::Field => (TEXT, Some(FIELD_BG), false),

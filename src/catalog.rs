@@ -68,7 +68,7 @@ impl Catalog {
         self.chords.is_empty()
     }
 
-    /// Indices of chords whose name or note (ignoring case) or shape contains
+    /// Indices of chords whose name or comment (ignoring case) or shape contains
     /// `query`, or whose root is the note `query` names, in catalog order.
     /// An empty query matches everything.
     pub fn search(&self, query: &str) -> Vec<usize> {
@@ -80,7 +80,7 @@ impl Catalog {
             .filter(|(_, chord)| {
                 let name = chord.name.as_deref().unwrap_or("").to_lowercase();
                 name.contains(&query)
-                    || chord.note.to_lowercase().contains(&query)
+                    || chord.comment.to_lowercase().contains(&query)
                     || chord.shape().contains(&query)
                     || (root.is_some() && chord.root == root)
             })
@@ -127,9 +127,9 @@ impl Catalog {
         Ok(())
     }
 
-    /// Replaces the note on the chord at `index` and moves it to the front.
-    pub fn set_note(&mut self, index: usize, note: &str) {
-        self.chords[index].note = note.trim().to_string();
+    /// Replaces the comment on the chord at `index` and moves it to the front.
+    pub fn set_comment(&mut self, index: usize, comment: &str) {
+        self.chords[index].comment = comment.trim().to_string();
         self.touch(index);
     }
 
@@ -241,21 +241,21 @@ mod tests {
     }
 
     #[test]
-    fn notes_are_searchable_and_trimmed() {
+    fn comments_are_searchable_and_trimmed() {
         let mut catalog = sample();
-        catalog.set_note(2, "  campfire strum  ");
-        assert_eq!(catalog.chords()[0].note, "campfire strum");
+        catalog.set_comment(2, "  campfire strum  ");
+        assert_eq!(catalog.chords()[0].comment, "campfire strum");
         assert_eq!(catalog.search("CAMPFIRE"), [0]);
     }
 
     #[test]
-    fn loads_chords_saved_without_notes() {
+    fn loads_chords_saved_without_comments() {
         let json = r#"{"chords":[{"name":"E","strings":["Open","Open","Open","Open","Open","Open"]}]}"#;
         let catalog: Catalog = serde_json::from_str(json).unwrap();
-        assert_eq!(catalog.chords()[0].note, "");
+        assert_eq!(catalog.chords()[0].comment, "");
         let json = serde_json::to_string(&catalog).unwrap();
-        // Empty notes, roots and formulas are left out of the file.
-        assert!(!json.contains("note") && !json.contains("root") && !json.contains("formula"));
+        // Empty comments, roots and formulas are left out of the file.
+        assert!(!json.contains("comment") && !json.contains("root") && !json.contains("formula"));
     }
 
     #[test]

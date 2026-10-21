@@ -34,7 +34,7 @@ pub fn to_pdf_with(chords: &[&Chord], options: &usvg::Options) -> io::Result<Vec
         .collect::<Result<Vec<_>, _>>()
         .map_err(io::Error::other)?;
 
-    // One scale for every diagram, so a chord with a long note does not print
+    // One scale for every diagram, so a chord with a long comment does not print
     // smaller than its neighbours.
     let cell_width = (PAGE_WIDTH - 2.0 * MARGIN) / COLUMNS as f32;
     let cell_height = (PAGE_HEIGHT - 2.0 * MARGIN) / ROWS as f32;

@@ -1,4 +1,4 @@
-//! Chord form used to add a new chord or change a stored one: name and note
+//! Chord form used to add a new chord or change a stored one: name and comment
 //! fields, a root picker, the formula's degrees and the fretboard, with focus
 //! moving between them.
 
@@ -11,7 +11,7 @@ use guitar_chordbook::{
 
 use super::{
     app::Command,
-    style::{fretboard, text_box, Line, Role, NOTE_WIDTH},
+    style::{fretboard, text_box, Line, Role, COMMENT_WIDTH},
     view::{Frame, Message, Tone},
 };
 
@@ -29,7 +29,7 @@ pub enum Dir {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Focus {
     Name,
-    Note,
+    Comment,
     Root,
     Formula,
     Grid,
@@ -43,7 +43,7 @@ pub enum Action {
     Finger(Option<u8>),
     Type(char),
     Erase,
-    /// Tab: name, note, root, formula, fretboard, and round again.
+    /// Tab: name, comment, root, formula, fretboard, and round again.
     NextFocus,
     Save,
     /// Esc: from a field back to the fretboard, from the fretboard out of the editor.
@@ -87,10 +87,10 @@ impl Editor {
             (Focus::Grid, Action::Move(Dir::Down)) => self.cursor.0 = string.saturating_sub(1),
             (Focus::Grid, Action::Move(Dir::Left)) => self.cursor.1 = fret.saturating_sub(1),
             (Focus::Grid, Action::Move(Dir::Right)) => self.cursor.1 = (fret + 1).min(MAX_FRET),
-            (Focus::Name, Action::Move(Dir::Down)) => self.focus = Focus::Note,
-            (Focus::Note, Action::Move(Dir::Up)) => self.focus = Focus::Name,
-            (Focus::Note, Action::Move(Dir::Down)) => self.focus = Focus::Root,
-            (Focus::Root, Action::Move(Dir::Up)) => self.focus = Focus::Note,
+            (Focus::Name, Action::Move(Dir::Down)) => self.focus = Focus::Comment,
+            (Focus::Comment, Action::Move(Dir::Up)) => self.focus = Focus::Name,
+            (Focus::Comment, Action::Move(Dir::Down)) => self.focus = Focus::Root,
+            (Focus::Root, Action::Move(Dir::Up)) => self.focus = Focus::Comment,
             (Focus::Root, Action::Move(Dir::Down)) => self.focus = Focus::Formula,
             (Focus::Formula, Action::Move(Dir::Up)) => self.focus = Focus::Root,
             (Focus::Formula, Action::Move(Dir::Down)) => self.focus = Focus::Grid,
@@ -114,7 +114,7 @@ impl Editor {
             }
 
             (Focus::Name, Action::Type(c)) => self.chord.name.get_or_insert_with(String::new).push(c),
-            (Focus::Note, Action::Type(c)) => self.chord.note.push(c),
+            (Focus::Comment, Action::Type(c)) => self.chord.comment.push(c),
             (Focus::Name, Action::Erase) => {
                 if let Some(name) = &mut self.chord.name {
                     name.pop();
@@ -123,14 +123,14 @@ impl Editor {
                     }
                 }
             }
-            (Focus::Note, Action::Erase) => {
-                self.chord.note.pop();
+            (Focus::Comment, Action::Erase) => {
+                self.chord.comment.pop();
             }
 
             (focus, Action::NextFocus) => {
                 self.focus = match focus {
-                    Focus::Name => Focus::Note,
-                    Focus::Note => Focus::Root,
+                    Focus::Name => Focus::Comment,
+                    Focus::Comment => Focus::Root,
                     Focus::Root => Focus::Formula,
                     Focus::Formula => Focus::Grid,
                     Focus::Grid => Focus::Name,
@@ -156,7 +156,7 @@ impl Editor {
         None
     }
 
-    /// The chord as it should be stored: name and note without surrounding spaces.
+    /// The chord as it should be stored: name and comment without surrounding spaces.
     fn finished(&self) -> Chord {
         let mut chord = self.chord.clone();
         chord.name = chord
@@ -165,17 +165,17 @@ impl Editor {
             .map(str::trim)
             .filter(|name| !name.is_empty())
             .map(String::from);
-        chord.note = chord.note.trim().to_string();
+        chord.comment = chord.comment.trim().to_string();
         chord
     }
 
     pub fn render(&self, catalog: &Catalog) -> Frame {
         let mut body = Vec::new();
         let name = self.chord.name.as_deref().unwrap_or("");
-        for (field, label, text) in [(Focus::Name, "name", name), (Focus::Note, "note", &self.chord.note)] {
+        for (field, label, text) in [(Focus::Name, "name", name), (Focus::Comment, "comment", &self.chord.comment)] {
             let focused = self.focus == field;
             let label_role = if focused { Role::Accent } else { Role::Dim };
-            for (i, row) in text_box(text, NOTE_WIDTH, focused).into_iter().enumerate() {
+            for (i, row) in text_box(text, COMMENT_WIDTH, focused).into_iter().enumerate() {
                 let label = if i == 0 { label } else { "" };
                 body.push(Line::new().push(label_role, format!("{label:<LABEL_WIDTH$}")).append(row));
             }
@@ -231,8 +231,8 @@ impl Editor {
                     ("esc", "discard"),
                 ],
             ),
-            Focus::Name | Focus::Note => (
-                if self.focus == Focus::Name { "NAME" } else { "NOTE" },
+            Focus::Name | Focus::Comment => (
+                if self.focus == Focus::Name { "NAME" } else { "COMMENT" },
                 vec![("↑↓", "move"), ("tab", "next"), ("enter", "save"), ("esc", "to frets")],
             ),
             Focus::Root => (
@@ -272,7 +272,7 @@ fn action_for(key: KeyEvent, focus: Focus) -> Option<Action> {
         _ => {}
     }
     match focus {
-        Focus::Name | Focus::Note => match key.code {
+        Focus::Name | Focus::Comment => match key.code {
             KeyCode::Char(c) => Some(Action::Type(c)),
             KeyCode::Backspace => Some(Action::Erase),
             _ => None,
@@ -337,7 +337,7 @@ mod tests {
     fn up_past_high_e_walks_the_fields_and_back() {
         let mut editor = on_grid();
         editor.cursor = (STRINGS - 1, 3);
-        for focus in [Focus::Formula, Focus::Root, Focus::Note, Focus::Name, Focus::Name] {
+        for focus in [Focus::Formula, Focus::Root, Focus::Comment, Focus::Name, Focus::Name] {
             editor.apply(Action::Move(Dir::Up));
             assert_eq!(editor.focus, focus);
         }
@@ -356,8 +356,8 @@ mod tests {
         editor.apply(Action::NextFocus);
         type_text(&mut editor, "x shape ");
         assert_eq!(editor.chord.name.as_deref(), Some("Cm"));
-        assert_eq!(editor.chord.note, "x shape ");
-        // Fretboard keys do nothing while typing; the x above went into the note.
+        assert_eq!(editor.chord.comment, "x shape ");
+        // Fretboard keys do nothing while typing; the x above went into the comment.
         assert_eq!(editor.chord.shape(), "000000");
         // Erasing the whole name leaves no name.
         editor.apply(Action::Move(Dir::Up));
@@ -448,7 +448,7 @@ mod tests {
     }
 
     #[test]
-    fn save_trims_name_and_note() {
+    fn save_trims_name_and_comment() {
         let mut editor = Editor::new(Chord::new(), None);
         type_text(&mut editor, " G ");
         editor.apply(Action::NextFocus);
@@ -456,7 +456,7 @@ mod tests {
         let Some(Command::Store { chord, original: None }) = editor.apply(Action::Save) else {
             panic!("expected a store command");
         };
-        assert_eq!((chord.name.as_deref(), chord.note.as_str()), (Some("G"), "ring"));
+        assert_eq!((chord.name.as_deref(), chord.comment.as_str()), (Some("G"), "ring"));
     }
 
     #[test]

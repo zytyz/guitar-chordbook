@@ -13,11 +13,11 @@ const MARKER_Y: f32 = 64.0;
 const DOT_R: f32 = 11.0;
 const WIDTH: f32 = LEFT * 2.0 + STRING_GAP * (STRINGS - 1) as f32;
 const BOTTOM: f32 = NUT_Y + FRET_GAP * MAX_FRET as f32;
-/// Height without a note: room for the string names under the last fret.
+/// Height without a comment: room for the string names under the last fret.
 const BASE_HEIGHT: f32 = BOTTOM + 36.0;
-/// Characters per note line; about what fits the diagram width at the note font size.
-const NOTE_CHARS: usize = 30;
-const NOTE_LINE_HEIGHT: f32 = 16.0;
+/// Characters per comment line; about what fits the diagram width at the comment font size.
+const COMMENT_CHARS: usize = 30;
+const COMMENT_LINE_HEIGHT: f32 = 16.0;
 
 /// Frets that carry an inlay dot on a real guitar neck.
 const INLAYS: [u8; 2] = [3, 5];
@@ -28,10 +28,10 @@ const MUTE: &str = "#d33";
 
 /// Renders the chord as a standalone SVG document.
 pub fn to_svg(chord: &Chord) -> String {
-    let note = if chord.note.is_empty() { Vec::new() } else { wrap(&chord.note, NOTE_CHARS) };
-    let height = match note.len() {
+    let comment = if chord.comment.is_empty() { Vec::new() } else { wrap(&chord.comment, COMMENT_CHARS) };
+    let height = match comment.len() {
         0 => BASE_HEIGHT,
-        n => BASE_HEIGHT + 6.0 + NOTE_LINE_HEIGHT * n as f32,
+        n => BASE_HEIGHT + 6.0 + COMMENT_LINE_HEIGHT * n as f32,
     };
     let mut s = String::new();
     // Writing into a String cannot fail, so the results are ignored throughout.
@@ -127,12 +127,12 @@ pub fn to_svg(chord: &Chord) -> String {
         );
     }
 
-    for (i, line) in note.iter().enumerate() {
+    for (i, line) in comment.iter().enumerate() {
         let _ = writeln!(
             s,
             r##"<text x="{}" y="{}" font-size="12" font-style="italic" text-anchor="middle" fill="#555">{}</text>"##,
             WIDTH / 2.0,
-            BASE_HEIGHT + 10.0 + NOTE_LINE_HEIGHT * i as f32,
+            BASE_HEIGHT + 10.0 + COMMENT_LINE_HEIGHT * i as f32,
             escape(line)
         );
     }

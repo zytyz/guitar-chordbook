@@ -36,7 +36,7 @@ Without a path, `--export` writes to `output/` and `--pdf` to `output/chords.pdf
 |---|---|
 | `↑` `↓` / `j` `k` | select |
 | `enter` | open |
-| `/` | search by name, note or shape (e.g. `x32010`) |
+| `/` | search by name, comment or shape (e.g. `x32010`) |
 | `a` | add a chord |
 | `x` | export the catalog as SVG files or a PDF |
 | `q` | quit |
@@ -46,7 +46,7 @@ Without a path, `--export` writes to `output/` and `--pdf` to `output/chords.pdf
 | Key | Action |
 |---|---|
 | `e` | edit |
-| `c` | write a note |
+| `c` | write a comment |
 | `s` | export this chord as SVG |
 | `d` | delete (asks first) |
 | `esc` | back |
@@ -55,8 +55,8 @@ Without a path, `--export` writes to `output/` and `--pdf` to `output/chords.pdf
 
 | Key | Action |
 |---|---|
-| `↑` `↓` `←` `→` | move; going up past the high e string reaches the note and name fields |
-| `tab` | jump between name, note and fretboard |
+| `↑` `↓` `←` `→` | move; going up past the high e string reaches the formula, root, comment and name fields |
+| `tab` | jump between name, comment, root, formula and fretboard |
 | `space` | place or remove a dot (on the open column: toggle open and muted) |
 | `x` | mute or unmute the string |
 | `1` to `4`, `0` | set or clear the finger number on the string's dot |

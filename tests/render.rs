@@ -52,12 +52,12 @@ fn svg_contains_chord_elements() {
 }
 
 #[test]
-fn svg_note_goes_below_the_chord() {
+fn svg_comment_goes_below_the_chord() {
     let plain = render::to_svg(&c_major());
     assert!(!plain.contains("italic"));
 
     let mut noted = c_major();
-    noted.note = "Mute the low E with the tip of the 3rd finger & let G ring".into();
+    noted.comment = "Mute the low E with the tip of the 3rd finger & let G ring".into();
     let svg = render::to_svg(&noted);
     // Wrapped onto two lines, escaped, and the canvas grows to fit.
     assert_eq!(svg.matches(r#"font-style="italic""#).count(), 2);
