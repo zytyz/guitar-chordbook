@@ -1,4 +1,7 @@
-use guitar_chordbook::{render, Chord};
+use guitar_chordbook::{
+    render::{self, Labels},
+    Chord, Pitch,
+};
 
 fn c_major() -> Chord {
     let mut chord = Chord::from_shape("x32010").unwrap();
@@ -64,6 +67,26 @@ fn svg_comment_goes_below_the_chord() {
     assert!(svg.contains("&amp; let G ring"));
     assert!(svg.contains(r#"height="338""#), "{svg}");
     assert!(!render::to_text(&noted).contains("Mute"));
+}
+
+#[test]
+fn svg_notes_replace_fingers_in_the_same_space() {
+    let mut chord = c_major();
+    chord.set_finger(1, Some(3));
+    // The high e moved up to F#, outside C major.
+    chord.toggle(5, 2);
+    chord.root = Some(Pitch::new(0));
+    chord.formula = "1 3 5".parse().unwrap();
+    let fingers = render::to_svg(&chord);
+    let notes = render::to_svg_with(&chord, Labels::Notes);
+    assert!(fingers.contains(">3</text>") && !fingers.contains(r##"fill="#fff">C</text>"##));
+    // Dots and open strings are named, and the stray F# is red.
+    assert!(notes.contains(r##"fill="#fff">C</text>"##), "{notes}");
+    assert!(notes.contains(r##"fill="#d33"/>"##) && notes.contains(r#"font-size="11""#), "{notes}");
+    assert!(notes.contains(r##"fill="#333">G</text>"##), "{notes}");
+    assert!(!notes.contains(">3</text>"));
+    // Same canvas, so switching does not move anything.
+    assert_eq!(fingers.lines().next(), notes.lines().next());
 }
 
 #[test]

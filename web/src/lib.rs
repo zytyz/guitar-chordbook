@@ -2,16 +2,17 @@
 //!
 //! Chords cross into JavaScript as plain objects in the same shape as the
 //! catalog file, for example
-//! `{ name: "C", comment: "", strings: ["Muted", { Fretted: { fret: 3, finger: null } }, ...] }`.
+//! `{ name: "C", comment: "", root: "C", formula: ["1", "3", "5"], strings: ["Muted", { Fretted: { fret: 3, finger: null } }, ...] }`.
 //! Every rule (duplicate checks, recently used order, the open and muted cycle)
 //! stays in `guitar-chordbook`; this crate only checks that values from
 //! JavaScript are in range, so a bad call is an exception instead of a crash.
 
 use guitar_chordbook::{
-    Catalog, Chord,
+    Catalog, Chord, Pitch,
     chord::{MAX_FRET, STRING_NAMES, STRINGS},
     export,
-    render::{self, pdf::usvg},
+    pitch::DEGREE_NAMES,
+    render::{self, Labels, pdf::usvg},
 };
 use serde::Serialize;
 use wasm_bindgen::prelude::*;
@@ -37,6 +38,18 @@ fn check_string(string: usize) -> Result<usize, JsError> {
 #[wasm_bindgen(js_name = stringNames)]
 pub fn string_names() -> Vec<String> {
     STRING_NAMES.iter().map(|name| name.to_string()).collect()
+}
+
+/// The twelve note names, C first, as roots are written in the catalog.
+#[wasm_bindgen(js_name = noteNames)]
+pub fn note_names() -> Vec<String> {
+    (0..12).map(|semitones| Pitch::new(semitones).to_string()).collect()
+}
+
+/// The twelve degree names, root first, as formulas are written in the catalog.
+#[wasm_bindgen(js_name = degreeNames)]
+pub fn degree_names() -> Vec<String> {
+    DEGREE_NAMES.iter().map(|name| name.to_string()).collect()
 }
 
 /// Highest fret a dot can be placed on.
@@ -91,10 +104,12 @@ pub fn set_finger(chord: JsValue, string: usize, finger: Option<u8>) -> Result<J
     }
 }
 
-/// The chord diagram as an SVG document.
+/// The chord diagram as an SVG document, with finger numbers, or with note
+/// names when `notes` is true. Both are the same size.
 #[wasm_bindgen]
-pub fn svg(chord: JsValue) -> Result<String, JsError> {
-    Ok(render::to_svg(&chord_from_js(chord)?))
+pub fn svg(chord: JsValue, notes: Option<bool>) -> Result<String, JsError> {
+    let labels = if notes.unwrap_or(false) { Labels::Notes } else { Labels::Fingers };
+    Ok(render::to_svg_with(&chord_from_js(chord)?, labels))
 }
 
 /// The chord name made safe for a file name, or the shape when unnamed.
@@ -147,7 +162,8 @@ impl Chordbook {
         to_js(&self.catalog.chords())
     }
 
-    /// Positions of chords whose name, comment or shape contains `query`.
+    /// Positions of chords whose name, comment or shape contains `query`, or
+    /// whose root is the note `query` names.
     pub fn search(&self, query: &str) -> Vec<usize> {
         self.catalog.search(query)
     }

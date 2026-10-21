@@ -51,7 +51,7 @@ body {
   padding-bottom: env(safe-area-inset-bottom, 0px);
 }
 
-button, input, textarea { font: inherit; color: inherit; }
+button, input, textarea, select { font: inherit; color: inherit; }
 
 button {
   cursor: pointer;
@@ -236,11 +236,52 @@ dialog::backdrop { background: rgba(20, 16, 12, 0.45); }
 
 .actions { display: flex; gap: 0.6rem; justify-content: center; flex-wrap: wrap; }
 
+.toggle-row { display: flex; justify-content: center; }
+
+/* Twelve semitones: the viewer's strip from the root, and the editor's formula chips. */
+.degrees {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 4px;
+}
+.degree {
+  position: relative;
+  display: grid;
+  place-items: center;
+  align-content: center;
+  min-height: 44px;
+  padding: 0.3rem 0;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--raised);
+  color: var(--muted);
+  font-size: 0.8rem;
+  line-height: 1.2;
+}
+.degree b { color: var(--ink); font-size: 0.95rem; }
+button.degree { font-weight: 600; font-size: 0.95rem; color: var(--ink); }
+.degree.on, .degree[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+.degree.on b { color: var(--accent-ink); }
+/* A check as well as the fill, so chosen degrees read without color. */
+.degree.on::after, .degree[aria-pressed="true"]::after {
+  content: "✓";
+  position: absolute;
+  top: 1px;
+  right: 4px;
+  font-size: 0.65rem;
+  font-weight: 700;
+}
+/* Kept in the layout but not shown, so nothing around it moves. */
+.concealed { visibility: hidden; }
+
 /* Editor */
 
 .field { display: grid; gap: 0.3rem; }
 .field span { font-size: 0.85rem; font-weight: 600; color: var(--muted); }
-.field input, .field textarea {
+.field input, .field textarea, .field select {
   width: 100%;
   padding: 0.6rem 0.75rem;
   border: 1px solid var(--line);
@@ -249,6 +290,8 @@ dialog::backdrop { background: rgba(20, 16, 12, 0.45); }
   resize: vertical;
 }
 .field input { font-size: 1.15rem; font-weight: 600; }
+.formula { border: none; margin: 0; padding: 0; min-width: 0; }
+.formula legend { font-size: 0.85rem; font-weight: 600; color: var(--muted); padding: 0; margin-bottom: 0.3rem; }
 
 .board-wrap { display: flex; justify-content: center; }
 .board { width: 100%; max-width: 340px; height: auto; touch-action: manipulation; user-select: none; -webkit-user-select: none; }

@@ -4,9 +4,12 @@
 
 import init, {
   Chordbook, newChord, toggle, setFinger, svg, chordShape, fileStem, stringNames, maxFret,
+  noteNames, degreeNames,
 } from "./pkg/chordbook_web.js";
 
 const STORAGE_KEY = "chordbook/catalog";
+/** Whether the viewer last showed fingers or notes. */
+const LABELS_KEY = "chordbook/labels";
 const FONTS = ["fonts/LiberationSans-Regular.ttf", "fonts/LiberationSans-Bold.ttf"];
 
 const $ = (id) => document.getElementById(id);
@@ -15,6 +18,8 @@ const SVG_NS = "http://www.w3.org/2000/svg";
 await init();
 const STRING_NAMES = stringNames();
 const MAX_FRET = maxFret();
+const NOTE_NAMES = noteNames();
+const DEGREE_NAMES = degreeNames();
 
 let book = loadBook();
 $("loading").remove();
@@ -99,11 +104,47 @@ function openViewer(index) {
   $("viewer").showModal();
 }
 
+let labels = "fingers";
+try {
+  if (localStorage.getItem(LABELS_KEY) === "notes") labels = "notes";
+} catch {}
+document.querySelector(`input[name="labels"][value="${labels}"]`).checked = true;
+
+for (const input of document.querySelectorAll('input[name="labels"]')) {
+  input.addEventListener("change", () => {
+    labels = input.value;
+    try { localStorage.setItem(LABELS_KEY, labels); } catch {}
+    showViewer();
+  });
+}
+
 function showViewer() {
   const chord = book.chords()[0];
+  const notes = labels === "notes";
+  const formula = chord.formula ?? [];
   $("viewer-title").textContent = chordName(chord);
-  $("viewer-diagram").innerHTML = svg(chord);
+  $("viewer-diagram").innerHTML = svg(chord, notes);
   $("viewer-shape").textContent = chordShape(chord);
+
+  // Everything below the diagram takes the same space in both views, so the
+  // diagram stays put when switching between them.
+  const theory = [chord.root && `Root ${chord.root}`, formula.length && `Formula ${formula.join(" ")}`];
+  $("viewer-theory").textContent = theory.filter(Boolean).join(" · ");
+  $("viewer-theory").hidden = !chord.root && !formula.length;
+  const strip = $("viewer-strip");
+  strip.hidden = !chord.root;
+  strip.classList.toggle("concealed", !notes);
+  strip.setAttribute("aria-hidden", String(!notes));
+  const root = NOTE_NAMES.indexOf(chord.root);
+  strip.replaceChildren(...DEGREE_NAMES.map((degree, semitones) => {
+    const note = NOTE_NAMES[(root + semitones) % 12];
+    const wanted = formula.includes(degree);
+    const item = document.createElement("li");
+    item.className = wanted ? "degree on" : "degree";
+    item.setAttribute("aria-label", `${note}, ${degree}${wanted ? ", in the chord" : ""}`);
+    item.append(Object.assign(document.createElement("b"), { textContent: note }), degree);
+    return item;
+  }));
 }
 
 $("edit").addEventListener("click", () => {
@@ -130,7 +171,7 @@ $("delete").addEventListener("click", async () => {
 
 $("download-svg").addEventListener("click", () => {
   const chord = book.chords()[0];
-  download(new Blob([svg(chord)], { type: "image/svg+xml" }), `${fileStem(chord)}.svg`);
+  download(new Blob([svg(chord, labels === "notes")], { type: "image/svg+xml" }), `${fileStem(chord)}.svg`);
 });
 
 // Editor
@@ -146,6 +187,8 @@ function openEditor(chord, index) {
   $("editor-title").textContent = index === null ? "New chord" : `Edit ${chordName(chord)}`;
   $("name").value = chord.name ?? "";
   $("comment").value = chord.comment ?? "";
+  $("root").value = chord.root ?? "";
+  renderFormula();
   document.querySelector('input[name="finger"][value="0"]').checked = true;
   renderBoard();
   check();
@@ -157,9 +200,38 @@ for (const button of [$("new"), $("empty-new")]) {
   button.addEventListener("click", () => openEditor(newChord(), null));
 }
 
-/** The draft with the name and comment fields applied. */
+/** The draft with the name, comment and root fields applied. */
 function currentDraft() {
-  return { ...draft, name: $("name").value.trim() || null, comment: $("comment").value.trim() };
+  return {
+    ...draft,
+    name: $("name").value.trim() || null,
+    comment: $("comment").value.trim(),
+    root: $("root").value || null,
+  };
+}
+
+$("root").append(...NOTE_NAMES.map((note) => new Option(note, note)));
+
+const formulaChips = DEGREE_NAMES.map((degree) => {
+  const chip = document.createElement("button");
+  chip.type = "button";
+  chip.className = "degree";
+  chip.textContent = degree;
+  chip.addEventListener("click", () => {
+    const formula = new Set(draft.formula ?? []);
+    if (formula.has(degree)) formula.delete(degree);
+    else formula.add(degree);
+    // Kept in degree order, as the catalog writes it.
+    draft.formula = DEGREE_NAMES.filter((name) => formula.has(name));
+    renderFormula();
+  });
+  return chip;
+});
+$("formula").append(...formulaChips);
+
+function renderFormula() {
+  const formula = draft.formula ?? [];
+  formulaChips.forEach((chip, i) => chip.setAttribute("aria-pressed", String(formula.includes(DEGREE_NAMES[i]))));
 }
 
 function selectedFinger() {

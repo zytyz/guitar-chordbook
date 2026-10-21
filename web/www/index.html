@@ -34,7 +34,7 @@
       </details>
     </div>
   </div>
-  <input id="search" type="search" placeholder="Search e.g. Am, x02210 or words in a comment" aria-label="Search chords" autocomplete="off" spellcheck="false">
+  <input id="search" type="search" placeholder="Search e.g. Am, x02210, C# or words in a comment" aria-label="Search chords" autocomplete="off" spellcheck="false">
 </header>
 
 <main>
@@ -59,7 +59,15 @@
     <button type="button" class="plain strong" id="edit">Edit</button>
   </header>
   <div class="sheet-body">
+    <div class="toggle-row">
+      <div class="segmented" role="radiogroup" aria-label="Diagram shows">
+        <label><input type="radio" name="labels" value="fingers" checked><span>Fingers</span></label>
+        <label><input type="radio" name="labels" value="notes"><span>Notes</span></label>
+      </div>
+    </div>
     <div id="viewer-diagram" class="diagram"></div>
+    <p id="viewer-theory" class="shape-line"></p>
+    <ul id="viewer-strip" class="degrees" aria-label="Semitones from the root"></ul>
     <p class="shape-line">Shape <code id="viewer-shape"></code></p>
     <div class="actions">
       <button type="button" id="download-svg">Download SVG</button>
@@ -95,6 +103,14 @@
       </fieldset>
       <p class="hint">Tap above the nut to switch a string between open and muted. Tap a dot again to remove it.</p>
       <p class="shape-line">Shape <code id="editor-shape"></code></p>
+      <label class="field">
+        <span>Root</span>
+        <select id="root"><option value="">None</option></select>
+      </label>
+      <fieldset class="field formula">
+        <legend>Formula</legend>
+        <div id="formula" class="degrees"></div>
+      </fieldset>
       <label class="field">
         <span>Comment</span>
         <textarea id="comment" rows="3" placeholder="Optional. Printed under the diagram."></textarea>

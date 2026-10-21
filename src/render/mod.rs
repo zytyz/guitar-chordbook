@@ -6,7 +6,18 @@ pub mod svg;
 
 pub use ascii::{to_ascii, to_text};
 pub use pdf::{to_pdf, to_pdf_with};
-pub use svg::to_svg;
+pub use svg::{to_svg, to_svg_with};
+
+/// What the marks on a diagram show.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Labels {
+    /// Finger numbers on dots, and open and muted markers above the nut.
+    #[default]
+    Fingers,
+    /// The note each played string sounds, on its dot or above the nut.
+    /// Notes outside the chord's formula are flagged.
+    Notes,
+}
 
 /// Word wraps `text` to lines of at most `width` columns. Words longer than a
 /// line are split.

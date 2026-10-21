@@ -2,7 +2,7 @@
 
 use std::fmt::Write;
 
-use super::wrap;
+use super::{wrap, Labels};
 use crate::chord::{Chord, StringState, MAX_FRET, STRINGS, STRING_NAMES};
 
 const LEFT: f32 = 30.0;
@@ -26,8 +26,14 @@ const INK: &str = "#333";
 const LINE: &str = "#777";
 const MUTE: &str = "#d33";
 
-/// Renders the chord as a standalone SVG document.
+/// Renders the chord as a standalone SVG document, with finger numbers.
 pub fn to_svg(chord: &Chord) -> String {
+    to_svg_with(chord, Labels::Fingers)
+}
+
+/// [`to_svg`] with a choice of what the marks show. Both choices give a
+/// diagram of the same size, so one can replace the other in place.
+pub fn to_svg_with(chord: &Chord, labels: Labels) -> String {
     let comment = if chord.comment.is_empty() { Vec::new() } else { wrap(&chord.comment, COMMENT_CHARS) };
     let height = match comment.len() {
         0 => BASE_HEIGHT,
@@ -87,8 +93,10 @@ pub fn to_svg(chord: &Chord) -> String {
 
     for (string, state) in chord.strings.iter().enumerate() {
         let x = string_x(string);
-        match *state {
-            StringState::Muted => {
+        let note = chord.note_on(string).filter(|_| labels == Labels::Notes);
+        let ink = if note.is_some() && chord.is_stray(string) { MUTE } else { INK };
+        match (*state, note) {
+            (StringState::Muted, _) => {
                 let d = 7.0;
                 let _ = writeln!(
                     s,
@@ -97,20 +105,33 @@ pub fn to_svg(chord: &Chord) -> String {
                     x - d, MARKER_Y + d, x + d, MARKER_Y - d
                 );
             }
-            StringState::Open => {
+            (StringState::Open, Some(note)) => {
+                let _ = writeln!(
+                    s,
+                    r#"<text x="{x}" y="{}" font-size="15" font-weight="bold" text-anchor="middle" fill="{ink}">{note}</text>"#,
+                    MARKER_Y + 5.0
+                );
+            }
+            (StringState::Open, None) => {
                 let _ = writeln!(
                     s,
                     r#"<circle cx="{x}" cy="{MARKER_Y}" r="7" fill="none" stroke="{INK}" stroke-width="2.5"/>"#
                 );
             }
-            StringState::Fretted { fret, finger } => {
+            (StringState::Fretted { fret, finger }, note) => {
                 let y = fret_center(fret);
-                let _ = writeln!(s, r#"<circle cx="{x}" cy="{y}" r="{DOT_R}" fill="{INK}"/>"#);
-                if let Some(n) = finger {
+                let _ = writeln!(s, r#"<circle cx="{x}" cy="{y}" r="{DOT_R}" fill="{ink}"/>"#);
+                let label = match note {
+                    Some(note) => Some(note.to_string()),
+                    None => finger.map(|n| n.to_string()),
+                };
+                if let Some(label) = label {
+                    // Two letter notes are set smaller to fit inside the dot.
+                    let (size, lift) = if label.len() > 1 { (11, 4.0) } else { (14, 5.0) };
                     let _ = writeln!(
                         s,
-                        r##"<text x="{x}" y="{}" font-size="14" font-weight="bold" text-anchor="middle" fill="#fff">{n}</text>"##,
-                        y + 5.0
+                        r##"<text x="{x}" y="{}" font-size="{size}" font-weight="bold" text-anchor="middle" fill="#fff">{label}</text>"##,
+                        y + lift
                     );
                 }
             }

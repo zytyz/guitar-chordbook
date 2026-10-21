@@ -2,7 +2,7 @@
 //! and the view decides the actual colors.
 
 use guitar_chordbook::{
-    render::{self, wrap},
+    render::{self, wrap, Labels},
     chord::{MAX_FRET, STRINGS},
     pitch::{Formula, Pitch, DEGREE_NAMES},
     Chord,
@@ -127,17 +127,6 @@ pub fn text_box(text: &str, width: usize, focused: bool) -> Vec<Line> {
                 .push(role, " ".repeat(fill))
         })
         .collect()
-}
-
-/// What the marks on the fretboard show.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub enum Labels {
-    /// Finger numbers on dots, and ○ / × above the nut.
-    #[default]
-    Fingers,
-    /// The note each played string sounds, on its dot or in the open column.
-    /// Notes outside the chord's formula are flagged.
-    Notes,
 }
 
 /// The chord as a colored tab grid. Same layout as [`render::to_ascii`], with

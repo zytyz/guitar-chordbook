@@ -1,11 +1,14 @@
 //! Shows one stored chord, with actions to edit, annotate, export or delete it.
 
 use crossterm::event::{KeyCode, KeyEvent};
-use guitar_chordbook::{render::wrap, Catalog};
+use guitar_chordbook::{
+    render::{wrap, Labels},
+    Catalog,
+};
 
 use super::{
     app::Command,
-    style::{degree_strip, fretboard_with, text_box, Labels, Line, Role, COMMENT_WIDTH},
+    style::{degree_strip, fretboard_with, text_box, Line, Role, COMMENT_WIDTH},
     view::{Frame, Message, Tone},
 };
 
