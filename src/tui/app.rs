@@ -304,12 +304,25 @@ mod tests {
     fn add_new_chord() {
         let dir = TempDir::new("add");
         let mut app = app(&dir);
-        // New chord: type the name, arrow down past the note onto the
-        // fretboard, move down to A, place fret 2, then up to D, and save.
-        press(&mut app, "aE↓↓jjjjll k \n");
+        // New chord: type the name, arrow down past the note, root and
+        // formula onto the fretboard, move down to A, place fret 2, then up to D, and save.
+        press(&mut app, "aE↓↓↓↓jjjjll k \n");
         assert_eq!(app.status, "saved to catalog");
         assert_eq!(app.catalog.chords()[0], named("E", "022000"));
         assert_eq!(Catalog::load(app.catalog_path()).unwrap().len(), 4);
+    }
+
+    #[test]
+    fn pick_root_and_formula_with_keys() {
+        let dir = TempDir::new("formula");
+        let mut app = app(&dir);
+        // Open C, edit, go up from high e to the formula row, turn on 1 and 3,
+        // go up to the root and pick C, then save.
+        press(&mut app, "\ne↑ →→→→ ↑→\n");
+        assert_eq!(app.status, "saved to catalog");
+        let chord = &app.catalog.chords()[0];
+        assert_eq!(chord.formula.to_string(), "1 3");
+        assert_eq!(chord.root.map(|root| root.name()), Some("C"));
     }
 
     #[test]
@@ -318,10 +331,10 @@ mod tests {
         let mut app = app(&dir);
 
         // Same shape as G under a new name.
-        press(&mut app, "aG2\t\tlll jjjjj kh ");
+        press(&mut app, "aG2\t\t\t\tlll jjjjj kh ");
         let frame = app.frame(100, 40);
         assert_eq!(frame.subtitle, "320003");
-        assert!(frame.body[0].text().starts_with("name   G2 "), "{:?}", frame.body[0].text());
+        assert!(frame.body[0].text().starts_with("name      G2 "), "{:?}", frame.body[0].text());
         press(&mut app, "\n");
         assert!(app.status.contains("same shape as G"), "{}", app.status);
         assert_eq!(app.frame(100, 40).message.unwrap().tone, Tone::Error);
@@ -332,7 +345,7 @@ mod tests {
         assert!(app.status.contains("named C already exists"), "{}", app.status);
 
         // No name, on a shape nothing else has (back on the fretboard, lift the A string dot).
-        press(&mut app, "\x08\t\t \n");
+        press(&mut app, "\x08\t\t\t\t \n");
         assert!(app.status.contains("needs a name"), "{}", app.status);
         assert_eq!(app.catalog.len(), 3);
     }

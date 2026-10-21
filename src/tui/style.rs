@@ -4,6 +4,7 @@
 use guitar_chordbook::{
     render::{self, wrap},
     chord::{MAX_FRET, STRINGS},
+    pitch::{Formula, Pitch, DEGREE_NAMES},
     Chord,
 };
 
@@ -18,6 +19,8 @@ pub enum Role {
     Grid,
     Nut,
     Dot,
+    /// A note the chord's formula does not include.
+    Stray,
     Open,
     Muted,
     /// The editor's cursor cell.
@@ -133,6 +136,7 @@ pub enum Labels {
     #[default]
     Fingers,
     /// The note each played string sounds, on its dot or in the open column.
+    /// Notes outside the chord's formula are flagged.
     Notes,
 }
 
@@ -157,11 +161,12 @@ pub fn fretboard_with(chord: &Chord, cursor: Option<(usize, u8)>, labels: Labels
         for fret in 0..=MAX_FRET {
             let fill = if fret == 0 { ' ' } else { '─' };
             let (role, mark) = glyph(chars[i + 1]);
-            let mark = match (labels, role) {
-                (Labels::Notes, Role::Dot | Role::Open) => {
-                    chord.note_on(string).unwrap_or_default().to_string()
+            let (role, mark) = match (labels, role, chord.note_on(string)) {
+                (Labels::Notes, Role::Dot | Role::Open, Some(note)) => {
+                    let role = if chord.is_stray(string) { Role::Stray } else { role };
+                    (role, note.to_string())
                 }
-                _ => mark.to_string(),
+                _ => (role, mark.to_string()),
             };
             // A two letter note takes the right fill column.
             let after = if mark.chars().count() > 1 { String::new() } else { fill.to_string() };
@@ -186,6 +191,40 @@ pub fn fretboard_with(chord: &Chord, cursor: Option<(usize, u8)>, labels: Labels
         lines.push(line);
     }
     lines
+}
+
+/// Columns per semitone in [`degree_strip`].
+const STRIP_CELL: usize = 4;
+
+/// The twelve semitones from `root`, with each note over its degree and the
+/// degrees in `formula` highlighted and marked underneath.
+pub fn degree_strip(root: Pitch, formula: Formula) -> Vec<Line> {
+    let mut rows = [Line::new(), Line::new(), Line::new()];
+    for semitones in 0..12 {
+        let wanted = formula.contains(semitones);
+        let (note_role, degree_role) = if wanted { (Role::Dot, Role::Strong) } else { (Role::Dim, Role::Grid) };
+        let cells = [
+            (note_role, root.up(semitones).name()),
+            (degree_role, DEGREE_NAMES[usize::from(semitones)]),
+            (Role::Accent, if wanted { "▲" } else { "" }),
+        ];
+        for (row, (role, text)) in rows.iter_mut().zip(cells) {
+            *row = std::mem::take(row).push(role, format!(" {text:<w$}", w = STRIP_CELL - 1));
+        }
+    }
+    rows.into_iter().map(trim_end).collect()
+}
+
+/// Drops trailing spaces from the last span.
+fn trim_end(mut line: Line) -> Line {
+    while let Some(last) = line.0.last_mut() {
+        last.text.truncate(last.text.trim_end().len());
+        if !last.text.is_empty() {
+            break;
+        }
+        line.0.pop();
+    }
+    line
 }
 
 /// Role and display character for one character of the ASCII grid.
@@ -237,6 +276,28 @@ mod tests {
         assert_eq!(lines[6].text_in(Role::Muted), "×");
         assert_eq!(lines[1].text_in(Role::Open), "○");
         assert_eq!(lines[2].text_in(Role::Dot), "●");
+    }
+
+    #[test]
+    fn fretboard_flags_notes_outside_the_formula() {
+        let mut chord = Chord::from_shape("x32012").unwrap();
+        chord.root = Some(Pitch::new(0));
+        chord.formula = "1 3 5".parse().unwrap();
+        let lines = fretboard_with(&chord, None, Labels::Notes);
+        assert_eq!(lines[1].text_in(Role::Stray), "F#");
+        assert_eq!(lines[2].text_in(Role::Dot), "C");
+        // The fingers view does not check the formula.
+        assert_eq!(fretboard(&chord, None)[1].text_in(Role::Stray), "");
+    }
+
+    #[test]
+    fn degree_strip_starts_at_the_root() {
+        let lines = degree_strip(Pitch::new(9), "1 b3 5".parse().unwrap());
+        let texts: Vec<String> = lines.iter().map(Line::text).collect();
+        assert_eq!(texts[0], " A   A#  B   C   C#  D   D#  E   F   F#  G   G#");
+        assert_eq!(texts[1], " 1   b2  2   b3  3   4   b5  5   #5  6   b7  7");
+        assert_eq!(texts[2], " ▲           ▲               ▲");
+        assert_eq!(lines[0].text_in(Role::Dot).split_whitespace().collect::<Vec<_>>(), ["A", "C", "E"]);
     }
 
     #[test]

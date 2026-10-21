@@ -2,6 +2,8 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::pitch::{Formula, Pitch};
+
 /// Number of strings on the instrument.
 pub const STRINGS: usize = 6;
 /// Highest fret a dot can be placed on.
@@ -10,8 +12,6 @@ pub const MAX_FRET: u8 = 5;
 pub const STRING_NAMES: [&str; STRINGS] = ["E", "A", "D", "G", "B", "e"];
 /// Pitch class of each open string in standard tuning, as semitones above C.
 const OPEN_PITCHES: [u8; STRINGS] = [4, 9, 2, 7, 11, 4];
-/// Note names by semitone above C, spelled with sharps.
-const NOTE_NAMES: [&str; 12] = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
 
 /// What a single string does in the chord.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -31,6 +31,12 @@ pub struct Chord {
     /// Free-form comments about the chord. Empty means no note.
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub note: String,
+    /// The note the chord is built on.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub root: Option<Pitch>,
+    /// Degrees above the root the chord should contain, such as `1 3 5`.
+    #[serde(default, skip_serializing_if = "Formula::is_empty")]
+    pub formula: Formula,
     pub strings: [StringState; STRINGS],
 }
 
@@ -46,6 +52,8 @@ impl Chord {
         Self {
             name: None,
             note: String::new(),
+            root: None,
+            formula: Formula::default(),
             strings: [StringState::Open; STRINGS],
         }
     }
@@ -94,13 +102,24 @@ impl Chord {
     }
 
     /// The note `string` sounds in standard tuning, or None if it is muted.
-    pub fn note_on(&self, string: usize) -> Option<&'static str> {
+    pub fn note_on(&self, string: usize) -> Option<Pitch> {
         let fret = match self.strings[string] {
             StringState::Muted => return None,
             StringState::Open => 0,
             StringState::Fretted { fret, .. } => fret,
         };
-        Some(NOTE_NAMES[usize::from((OPEN_PITCHES[string] + fret) % 12)])
+        Some(Pitch::new(OPEN_PITCHES[string] + fret))
+    }
+
+    /// Whether `string` sounds a note outside the formula. False when the
+    /// string is muted or the chord has no root or formula to check against.
+    pub fn is_stray(&self, string: usize) -> bool {
+        match (self.root, self.note_on(string)) {
+            (Some(root), Some(note)) if !self.formula.is_empty() => {
+                !self.formula.contains(note.above(root))
+            }
+            _ => false,
+        }
     }
 
     /// Places a dot at `fret` on `string`, replacing any other dot on that string.
@@ -193,9 +212,20 @@ mod tests {
     #[test]
     fn note_on_names_sounding_pitches() {
         let chord = Chord::from_shape("x32010").unwrap();
-        let notes: Vec<_> = (0..STRINGS).map(|s| chord.note_on(s)).collect();
+        let notes: Vec<_> = (0..STRINGS).map(|s| chord.note_on(s).map(Pitch::name)).collect();
         assert_eq!(notes, [None, Some("C"), Some("E"), Some("G"), Some("C"), Some("E")]);
-        assert_eq!(Chord::from_shape("044000").unwrap().note_on(1), Some("C#"));
+        assert_eq!(Chord::from_shape("044000").unwrap().note_on(1).map(Pitch::name), Some("C#"));
+    }
+
+    #[test]
+    fn stray_notes_fall_outside_the_formula() {
+        // C major with the high e moved up to F#.
+        let mut chord = Chord::from_shape("x32012").unwrap();
+        assert!(!chord.is_stray(5), "nothing to check without a root");
+        chord.root = Some(Pitch::new(0));
+        chord.formula = "1 3 5".parse().unwrap();
+        let stray: Vec<bool> = (0..STRINGS).map(|s| chord.is_stray(s)).collect();
+        assert_eq!(stray, [false, false, false, false, false, true]);
     }
 
     #[test]

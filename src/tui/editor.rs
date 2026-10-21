@@ -1,9 +1,11 @@
-//! Chord form used to add a new chord or change a stored one: a name field,
-//! a note field and the fretboard, with focus moving between them.
+//! Chord form used to add a new chord or change a stored one: name and note
+//! fields, a root picker, the formula's degrees and the fretboard, with focus
+//! moving between them.
 
 use crossterm::event::{KeyCode, KeyEvent};
 use guitar_chordbook::{
     chord::{Chord, MAX_FRET, STRINGS},
+    pitch::{Pitch, DEGREE_NAMES},
     Catalog, CatalogError,
 };
 
@@ -14,7 +16,7 @@ use super::{
 };
 
 /// Width of the field labels, so the boxes and the fretboard line up.
-const LABEL_WIDTH: usize = 6;
+const LABEL_WIDTH: usize = 9;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Dir {
@@ -28,6 +30,8 @@ pub enum Dir {
 pub enum Focus {
     Name,
     Note,
+    Root,
+    Formula,
     Grid,
 }
 
@@ -39,7 +43,7 @@ pub enum Action {
     Finger(Option<u8>),
     Type(char),
     Erase,
-    /// Tab: name, note, fretboard, and round again.
+    /// Tab: name, note, root, formula, fretboard, and round again.
     NextFocus,
     Save,
     /// Esc: from a field back to the fretboard, from the fretboard out of the editor.
@@ -50,6 +54,8 @@ pub struct Editor {
     pub chord: Chord,
     /// `(string, fret)` on the fretboard. String 0 is low E; fret 0 is the open/mute column.
     pub cursor: (usize, u8),
+    /// Semitones above the root of the highlighted degree in the formula row.
+    pub degree: u8,
     pub focus: Focus,
     /// Catalog index of the chord being changed, or `None` when adding a new one.
     pub original: Option<usize>,
@@ -61,6 +67,7 @@ impl Editor {
         Self {
             chord,
             cursor: (STRINGS - 1, 0),
+            degree: 0,
             focus: if original.is_some() { Focus::Grid } else { Focus::Name },
             original,
         }
@@ -75,14 +82,28 @@ impl Editor {
         match (self.focus, action) {
             // The fretboard shows high e on top, so "up" means a higher string
             // index, and going up past high e moves into the fields above.
-            (Focus::Grid, Action::Move(Dir::Up)) if string == STRINGS - 1 => self.focus = Focus::Note,
+            (Focus::Grid, Action::Move(Dir::Up)) if string == STRINGS - 1 => self.focus = Focus::Formula,
             (Focus::Grid, Action::Move(Dir::Up)) => self.cursor.0 = string + 1,
             (Focus::Grid, Action::Move(Dir::Down)) => self.cursor.0 = string.saturating_sub(1),
             (Focus::Grid, Action::Move(Dir::Left)) => self.cursor.1 = fret.saturating_sub(1),
             (Focus::Grid, Action::Move(Dir::Right)) => self.cursor.1 = (fret + 1).min(MAX_FRET),
             (Focus::Name, Action::Move(Dir::Down)) => self.focus = Focus::Note,
             (Focus::Note, Action::Move(Dir::Up)) => self.focus = Focus::Name,
-            (Focus::Note, Action::Move(Dir::Down)) => self.focus = Focus::Grid,
+            (Focus::Note, Action::Move(Dir::Down)) => self.focus = Focus::Root,
+            (Focus::Root, Action::Move(Dir::Up)) => self.focus = Focus::Note,
+            (Focus::Root, Action::Move(Dir::Down)) => self.focus = Focus::Formula,
+            (Focus::Formula, Action::Move(Dir::Up)) => self.focus = Focus::Root,
+            (Focus::Formula, Action::Move(Dir::Down)) => self.focus = Focus::Grid,
+
+            // The root steps through the twelve notes and "none", wrapping around.
+            (Focus::Root, Action::Move(dir @ (Dir::Left | Dir::Right))) => {
+                let step = |pitch: Option<Pitch>| pitch.map_or(0, |p| p.semitones() + 1);
+                let index = (step(self.chord.root) + if dir == Dir::Right { 1 } else { 12 }) % 13;
+                self.chord.root = index.checked_sub(1).map(Pitch::new);
+            }
+            (Focus::Formula, Action::Move(Dir::Left)) => self.degree = self.degree.saturating_sub(1),
+            (Focus::Formula, Action::Move(Dir::Right)) => self.degree = (self.degree + 1).min(11),
+            (Focus::Formula, Action::Toggle) => self.chord.formula.toggle(self.degree),
 
             (Focus::Grid, Action::Toggle) => self.chord.toggle(string, fret),
             (Focus::Grid, Action::Mute) => self.chord.toggle_mute(string),
@@ -109,7 +130,9 @@ impl Editor {
             (focus, Action::NextFocus) => {
                 self.focus = match focus {
                     Focus::Name => Focus::Note,
-                    Focus::Note => Focus::Grid,
+                    Focus::Note => Focus::Root,
+                    Focus::Root => Focus::Formula,
+                    Focus::Formula => Focus::Grid,
                     Focus::Grid => Focus::Name,
                 };
             }
@@ -158,6 +181,32 @@ impl Editor {
             }
             body.push(Line::new());
         }
+        let label = |field: Focus, text: &str| {
+            let role = if self.focus == field { Role::Accent } else { Role::Dim };
+            Line::new().push(role, format!("{text:<LABEL_WIDTH$}"))
+        };
+        let root = match self.chord.root {
+            Some(root) => Line::new().push(Role::Strong, format!("{root:<2}")),
+            None => Line::new().push(Role::Dim, "none"),
+        };
+        body.push(label(Focus::Root, "root").append(match self.focus {
+            Focus::Root => Line::new().push(Role::Accent, "◀ ").append(root).push(Role::Accent, " ▶"),
+            _ => Line::new().push(Role::Text, "  ").append(root),
+        }));
+        body.push(Line::new());
+        // Degrees in the formula are bracketed; the cursor is a highlighted cell.
+        let mut degrees = label(Focus::Formula, "formula");
+        for (semitones, name) in (0..).zip(DEGREE_NAMES) {
+            let (role, chip) = match self.chord.formula.contains(semitones) {
+                true => (Role::Dot, format!("[{name}]")),
+                false => (Role::Dim, format!(" {name} ")),
+            };
+            let role = if self.focus == Focus::Formula && self.degree == semitones { Role::Cursor } else { role };
+            degrees = degrees.push(role, chip).push(Role::Text, " ".repeat(5 - name.len() - 2));
+        }
+        body.push(degrees);
+        body.push(Line::new());
+
         let cursor = (self.focus == Focus::Grid).then_some(self.cursor);
         for row in fretboard(&self.chord, cursor) {
             body.push(Line::new().push(Role::Text, " ".repeat(LABEL_WIDTH)).append(row));
@@ -185,6 +234,14 @@ impl Editor {
             Focus::Name | Focus::Note => (
                 if self.focus == Focus::Name { "NAME" } else { "NOTE" },
                 vec![("↑↓", "move"), ("tab", "next"), ("enter", "save"), ("esc", "to frets")],
+            ),
+            Focus::Root => (
+                "ROOT",
+                vec![("←→", "change"), ("↑↓", "move"), ("enter", "save"), ("esc", "to frets")],
+            ),
+            Focus::Formula => (
+                "FORMULA",
+                vec![("←→", "move"), ("space", "add/remove"), ("↑↓", "rows"), ("enter", "save"), ("esc", "to frets")],
             ),
         };
         Frame {
@@ -218,6 +275,13 @@ fn action_for(key: KeyEvent, focus: Focus) -> Option<Action> {
         Focus::Name | Focus::Note => match key.code {
             KeyCode::Char(c) => Some(Action::Type(c)),
             KeyCode::Backspace => Some(Action::Erase),
+            _ => None,
+        },
+        Focus::Root => None,
+        Focus::Formula => match key.code {
+            KeyCode::Char('h') => Some(Action::Move(Dir::Left)),
+            KeyCode::Char('l') => Some(Action::Move(Dir::Right)),
+            KeyCode::Char(' ') => Some(Action::Toggle),
             _ => None,
         },
         Focus::Grid => match key.code {
@@ -270,17 +334,16 @@ mod tests {
     }
 
     #[test]
-    fn up_past_high_e_reaches_note_then_name_and_back() {
+    fn up_past_high_e_walks_the_fields_and_back() {
         let mut editor = on_grid();
         editor.cursor = (STRINGS - 1, 3);
-        editor.apply(Action::Move(Dir::Up));
-        assert_eq!(editor.focus, Focus::Note);
-        editor.apply(Action::Move(Dir::Up));
-        assert_eq!(editor.focus, Focus::Name);
-        editor.apply(Action::Move(Dir::Up));
-        assert_eq!(editor.focus, Focus::Name);
-        editor.apply(Action::Move(Dir::Down));
-        editor.apply(Action::Move(Dir::Down));
+        for focus in [Focus::Formula, Focus::Root, Focus::Note, Focus::Name, Focus::Name] {
+            editor.apply(Action::Move(Dir::Up));
+            assert_eq!(editor.focus, focus);
+        }
+        for _ in 0..4 {
+            editor.apply(Action::Move(Dir::Down));
+        }
         // Back on the fretboard where the cursor was.
         assert_eq!((editor.focus, editor.cursor), (Focus::Grid, (STRINGS - 1, 3)));
     }
@@ -333,6 +396,47 @@ mod tests {
             editor.chord.strings[1],
             StringState::Fretted { fret: 3, finger: Some(3) }
         );
+    }
+
+    #[test]
+    fn root_cycles_through_none() {
+        let mut editor = on_grid();
+        editor.focus = Focus::Root;
+        editor.apply(Action::Move(Dir::Right));
+        assert_eq!(editor.chord.root, Some(Pitch::new(0)));
+        editor.apply(Action::Move(Dir::Left));
+        assert_eq!(editor.chord.root, None);
+        editor.apply(Action::Move(Dir::Left));
+        assert_eq!(editor.chord.root.map(Pitch::name), Some("B"));
+    }
+
+    #[test]
+    fn space_toggles_degrees() {
+        let mut editor = on_grid();
+        editor.focus = Focus::Formula;
+        for semitones in [0, 4, 7] {
+            editor.degree = semitones;
+            editor.apply(Action::Toggle);
+        }
+        editor.apply(Action::Toggle);
+        assert_eq!(editor.chord.formula.to_string(), "1 3");
+        // Moving stops at the ends of the row.
+        for _ in 0..20 {
+            editor.apply(Action::Move(Dir::Right));
+        }
+        assert_eq!(editor.degree, 11);
+    }
+
+    #[test]
+    fn formula_row_brackets_chosen_degrees() {
+        let mut editor = on_grid();
+        editor.chord.formula = "1 3 5".parse().unwrap();
+        editor.focus = Focus::Formula;
+        editor.degree = 3;
+        let body = editor.render(&Catalog::default()).body;
+        let row = body.iter().find(|line| line.text().starts_with("formula")).unwrap();
+        assert!(row.text().starts_with("formula  [1]   b2   2    b3  [3]   4    b5  [5]"), "{:?}", row.text());
+        assert_eq!(row.text_in(Role::Cursor), " b3 ");
     }
 
     #[test]

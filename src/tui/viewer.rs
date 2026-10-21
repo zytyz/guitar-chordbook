@@ -5,7 +5,7 @@ use guitar_chordbook::{render::wrap, Catalog};
 
 use super::{
     app::Command,
-    style::{fretboard_with, text_box, Labels, Line, Role, NOTE_WIDTH},
+    style::{degree_strip, fretboard_with, text_box, Labels, Line, Role, NOTE_WIDTH},
     view::{Frame, Message, Tone},
 };
 
@@ -81,6 +81,10 @@ impl Viewer {
         let chord = &catalog.chords()[self.index];
         let name = chord.name.as_deref().unwrap_or("?");
         let mut body = fretboard_with(chord, None, self.labels);
+        if let (Labels::Notes, Some(root)) = (self.labels, chord.root) {
+            body.push(Line::new());
+            body.extend(degree_strip(root, chord.formula));
+        }
         let note = match &self.state {
             State::Note(buf) => text_box(buf, NOTE_WIDTH, true),
             _ if chord.note.is_empty() => Vec::new(),

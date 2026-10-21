@@ -224,6 +224,7 @@ fn palette(role: Role) -> (Color, Option<Color>, bool) {
         Role::Grid => (FAINT, None, false),
         Role::Nut => (TEXT, None, true),
         Role::Dot => (ORANGE, None, true),
+        Role::Stray => (RED, None, true),
         Role::Open => (GREEN, None, false),
         Role::Muted => (RED, None, true),
         Role::Cursor => (BLACK, Some(GREEN), true),

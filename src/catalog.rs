@@ -4,7 +4,7 @@ use std::{fmt, fs, io, path::Path};
 
 use serde::{Deserialize, Serialize};
 
-use crate::chord::Chord;
+use crate::{chord::Chord, pitch::Pitch};
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Catalog {
@@ -69,9 +69,11 @@ impl Catalog {
     }
 
     /// Indices of chords whose name or note (ignoring case) or shape contains
-    /// `query`, in catalog order. An empty query matches everything.
+    /// `query`, or whose root is the note `query` names, in catalog order.
+    /// An empty query matches everything.
     pub fn search(&self, query: &str) -> Vec<usize> {
         let query = query.trim().to_lowercase();
+        let root = query.parse::<Pitch>().ok();
         self.chords
             .iter()
             .enumerate()
@@ -80,6 +82,7 @@ impl Catalog {
                 name.contains(&query)
                     || chord.note.to_lowercase().contains(&query)
                     || chord.shape().contains(&query)
+                    || (root.is_some() && chord.root == root)
             })
             .map(|(index, _)| index)
             .collect()
@@ -226,6 +229,18 @@ mod tests {
     }
 
     #[test]
+    fn search_by_root_in_either_spelling() {
+        let mut catalog = sample();
+        let mut barre = chord("Barre", "x43121");
+        barre.root = Some(Pitch::new(1));
+        catalog.add(barre).unwrap();
+        assert_eq!(catalog.search("C#"), [0]);
+        assert_eq!(catalog.search("db"), [0]);
+        // A plain letter still matches names too: C by name, nothing by root.
+        assert_eq!(catalog.search("c"), [1]);
+    }
+
+    #[test]
     fn notes_are_searchable_and_trimmed() {
         let mut catalog = sample();
         catalog.set_note(2, "  campfire strum  ");
@@ -238,8 +253,9 @@ mod tests {
         let json = r#"{"chords":[{"name":"E","strings":["Open","Open","Open","Open","Open","Open"]}]}"#;
         let catalog: Catalog = serde_json::from_str(json).unwrap();
         assert_eq!(catalog.chords()[0].note, "");
-        // An empty note is left out of the file.
-        assert!(!serde_json::to_string(&catalog).unwrap().contains("note"));
+        let json = serde_json::to_string(&catalog).unwrap();
+        // Empty notes, roots and formulas are left out of the file.
+        assert!(!json.contains("note") && !json.contains("root") && !json.contains("formula"));
     }
 
     #[test]
