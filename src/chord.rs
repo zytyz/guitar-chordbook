@@ -8,6 +8,10 @@ pub const STRINGS: usize = 6;
 pub const MAX_FRET: u8 = 5;
 /// String names in standard tuning. Index 0 is the low E string.
 pub const STRING_NAMES: [&str; STRINGS] = ["E", "A", "D", "G", "B", "e"];
+/// Pitch class of each open string in standard tuning, as semitones above C.
+const OPEN_PITCHES: [u8; STRINGS] = [4, 9, 2, 7, 11, 4];
+/// Note names by semitone above C, spelled with sharps.
+const NOTE_NAMES: [&str; 12] = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
 
 /// What a single string does in the chord.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -87,6 +91,16 @@ impl Chord {
             StringState::Fretted { fret, .. } => Some(fret),
             _ => None,
         }
+    }
+
+    /// The note `string` sounds in standard tuning, or None if it is muted.
+    pub fn note_on(&self, string: usize) -> Option<&'static str> {
+        let fret = match self.strings[string] {
+            StringState::Muted => return None,
+            StringState::Open => 0,
+            StringState::Fretted { fret, .. } => fret,
+        };
+        Some(NOTE_NAMES[usize::from((OPEN_PITCHES[string] + fret) % 12)])
     }
 
     /// Places a dot at `fret` on `string`, replacing any other dot on that string.
@@ -174,6 +188,14 @@ mod tests {
         assert_eq!(chord.strings[0], StringState::Muted);
         chord.toggle_mute(0);
         assert_eq!(chord.strings[0], StringState::Open);
+    }
+
+    #[test]
+    fn note_on_names_sounding_pitches() {
+        let chord = Chord::from_shape("x32010").unwrap();
+        let notes: Vec<_> = (0..STRINGS).map(|s| chord.note_on(s)).collect();
+        assert_eq!(notes, [None, Some("C"), Some("E"), Some("G"), Some("C"), Some("E")]);
+        assert_eq!(Chord::from_shape("044000").unwrap().note_on(1), Some("C#"));
     }
 
     #[test]

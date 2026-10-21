@@ -3,6 +3,7 @@
 
 use guitar_chordbook::{
     render::{self, wrap},
+    chord::{MAX_FRET, STRINGS},
     Chord,
 };
 
@@ -125,32 +126,62 @@ pub fn text_box(text: &str, width: usize, focused: bool) -> Vec<Line> {
         .collect()
 }
 
+/// What the marks on the fretboard show.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Labels {
+    /// Finger numbers on dots, and ○ / × above the nut.
+    #[default]
+    Fingers,
+    /// The note each played string sounds, on its dot or in the open column.
+    Notes,
+}
+
 /// The chord as a colored tab grid. Same layout as [`render::to_ascii`], with
 /// box drawing for the strings and frets, and the cursor shown as a filled cell.
 pub fn fretboard(chord: &Chord, cursor: Option<(usize, u8)>) -> Vec<Line> {
+    fretboard_with(chord, cursor, Labels::Fingers)
+}
+
+/// [`fretboard`] with a choice of what the marks show.
+pub fn fretboard_with(chord: &Chord, cursor: Option<(usize, u8)>, labels: Labels) -> Vec<Line> {
     let ascii = render::to_ascii(chord, cursor);
     let mut rows = ascii.lines();
     let mut lines = vec![Line::new().push(Role::Dim, rows.next().unwrap_or_default())];
 
-    for row in rows {
+    for (row, string) in rows.zip((0..STRINGS).rev()) {
         let chars: Vec<char> = row.chars().collect();
-        // Columns 0..3 hold the string name, 3..6 the open/mute cell and 6..8 the nut.
+        // Columns 0..3 hold the string name, then each fret is a three column
+        // cell followed by its wire: two columns of nut after the open cell.
         let mut line = Line::new().push(Role::Dim, chars[..3].iter().collect::<String>());
         let mut i = 3;
-        while i < chars.len() {
-            if chars[i] == '[' {
-                let fill = if i == 3 { ' ' } else { '─' };
-                let mark = glyph(chars[i + 1]).1;
-                line = line.push(Role::Cursor, format!("{fill}{mark}{fill}"));
-                i += 3;
-                continue;
-            }
-            let (role, shown) = match chars[i] {
-                '|' if i == 6 || i == 7 => (Role::Nut, '┃'),
-                c => glyph(c),
+        for fret in 0..=MAX_FRET {
+            let fill = if fret == 0 { ' ' } else { '─' };
+            let (role, mark) = glyph(chars[i + 1]);
+            let mark = match (labels, role) {
+                (Labels::Notes, Role::Dot | Role::Open) => {
+                    chord.note_on(string).unwrap_or_default().to_string()
+                }
+                _ => mark.to_string(),
             };
-            line = line.push(role, shown.to_string());
-            i += 1;
+            // A two letter note takes the right fill column.
+            let after = if mark.chars().count() > 1 { String::new() } else { fill.to_string() };
+            let fill_role = glyph(fill).0;
+            if chars[i] == '[' {
+                line = line.push(Role::Cursor, format!("{fill}{mark}{after}"));
+            } else {
+                line = line
+                    .push(fill_role, fill.to_string())
+                    .push(role, mark)
+                    .push(fill_role, after);
+            }
+            i += 3;
+            if fret == 0 {
+                line = line.push(Role::Nut, "┃┃");
+                i += 2;
+            } else {
+                line = line.push(Role::Grid, "│");
+                i += 1;
+            }
         }
         lines.push(line);
     }
@@ -166,6 +197,7 @@ fn glyph(c: char) -> (Role, char) {
         'O' => (Role::Open, '○'),
         ' ' => (Role::Text, ' '),
         // A dot, or a finger number standing in for one.
+        '─' => (Role::Grid, '─'),
         other => (Role::Dot, other),
     }
 }
@@ -205,5 +237,16 @@ mod tests {
         assert_eq!(lines[6].text_in(Role::Muted), "×");
         assert_eq!(lines[1].text_in(Role::Open), "○");
         assert_eq!(lines[2].text_in(Role::Dot), "●");
+    }
+
+    #[test]
+    fn fretboard_shows_notes() {
+        let chord = Chord::from_shape("x42010").unwrap();
+        let lines = fretboard_with(&chord, None, Labels::Notes);
+        assert_eq!(lines[5].text(), " A    ┃┃───│───│───│─C#│───│");
+        assert_eq!(lines[5].text_in(Role::Dot), "C#");
+        assert_eq!(lines[3].text(), " G  G ┃┃───│───│───│───│───│");
+        assert_eq!(lines[3].text_in(Role::Open), "G");
+        assert_eq!(lines[6].text_in(Role::Muted), "×");
     }
 }

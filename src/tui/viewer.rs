@@ -5,7 +5,7 @@ use guitar_chordbook::{render::wrap, Catalog};
 
 use super::{
     app::Command,
-    style::{fretboard, text_box, Line, Role, NOTE_WIDTH},
+    style::{fretboard_with, text_box, Labels, Line, Role, NOTE_WIDTH},
     view::{Frame, Message, Tone},
 };
 
@@ -20,11 +20,12 @@ pub struct Viewer {
     /// Catalog index of the chord on screen.
     pub index: usize,
     state: State,
+    labels: Labels,
 }
 
 impl Viewer {
     pub fn new(index: usize) -> Self {
-        Self { index, state: State::Normal }
+        Self { index, state: State::Normal, labels: Labels::default() }
     }
 
     pub fn handle_key(&mut self, key: KeyEvent, catalog: &Catalog) -> Option<Command> {
@@ -55,6 +56,13 @@ impl Viewer {
                     self.state = State::Note(catalog.chords()[self.index].note.clone());
                     None
                 }
+                KeyCode::Char('t') => {
+                    self.labels = match self.labels {
+                        Labels::Fingers => Labels::Notes,
+                        Labels::Notes => Labels::Fingers,
+                    };
+                    None
+                }
                 KeyCode::Char('s') => Some(Command::Export(self.index)),
                 KeyCode::Char('d') => {
                     self.state = State::ConfirmDelete;
@@ -72,7 +80,7 @@ impl Viewer {
     pub fn render(&self, catalog: &Catalog) -> Frame {
         let chord = &catalog.chords()[self.index];
         let name = chord.name.as_deref().unwrap_or("?");
-        let mut body = fretboard(chord, None);
+        let mut body = fretboard_with(chord, None, self.labels);
         let note = match &self.state {
             State::Note(buf) => text_box(buf, NOTE_WIDTH, true),
             _ if chord.note.is_empty() => Vec::new(),
@@ -94,6 +102,10 @@ impl Viewer {
             hints: vec![
                 ("e", "edit"),
                 ("c", "note"),
+                ("t", match self.labels {
+                    Labels::Fingers => "show notes",
+                    Labels::Notes => "show fingers",
+                }),
                 ("s", "export svg"),
                 ("d", "delete"),
                 ("esc", "back"),
