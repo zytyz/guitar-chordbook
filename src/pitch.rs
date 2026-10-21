@@ -57,12 +57,13 @@ impl FromStr for Pitch {
         let invalid = || format!("{text:?} is not a note name");
         let mut chars = text.trim().chars();
         let letter = chars.next().ok_or_else(invalid)?.to_ascii_uppercase();
-        let natural = ["C", "D", "E", "F", "G", "A", "B"]
+        // The natural notes are the one letter names, at their semitones above C.
+        let natural = NOTE_NAMES
             .iter()
-            .position(|name| name.starts_with(letter))
+            .position(|name| name.chars().eq([letter]))
             .ok_or_else(invalid)?;
-        let semitones = accidentals(chars.as_str()).ok_or_else(invalid)?;
-        Ok(Self::new((i32::from(NATURAL_DEGREES[natural]) + semitones).rem_euclid(12) as u8))
+        let shift = accidentals(chars.as_str()).ok_or_else(invalid)?;
+        Ok(Self::new((natural as i32 + shift).rem_euclid(12) as u8))
     }
 }
 
