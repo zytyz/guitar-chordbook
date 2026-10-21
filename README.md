@@ -4,6 +4,12 @@ Build and browse your own catalog of guitar chord diagrams (first five frets),
 with export to SVG and printable PDF. Use it in the terminal or as a website
 that works on a phone. Both run the same Rust code.
 
+A chord can also have a **root** note and a **formula**: the degrees it is
+built from, such as root `C` and `1 3 5` for C major. Degrees are written
+`1 b2 2 b3 3 4 b5 5 #5 6 b7 7`. The notes view labels the fretboard with note
+names (always spelled with sharps), shows notes outside the formula in red,
+and lists the twelve semitones from the root.
+
 ## 1. Command line app
 
 ### Run
@@ -36,7 +42,7 @@ Without a path, `--export` writes to `output/` and `--pdf` to `output/chords.pdf
 |---|---|
 | `↑` `↓` / `j` `k` | select |
 | `enter` | open |
-| `/` | search by name, comment or shape (e.g. `x32010`) |
+| `/` | search by name, comment, shape (e.g. `x32010`) or root (e.g. `C#`) |
 | `a` | add a chord |
 | `x` | export the catalog as SVG files or a PDF |
 | `q` | quit |
@@ -47,6 +53,7 @@ Without a path, `--export` writes to `output/` and `--pdf` to `output/chords.pdf
 |---|---|
 | `e` | edit |
 | `c` | write a comment |
+| `t` | switch between finger numbers and the notes view |
 | `s` | export this chord as SVG |
 | `d` | delete (asks first) |
 | `esc` | back |
@@ -55,9 +62,9 @@ Without a path, `--export` writes to `output/` and `--pdf` to `output/chords.pdf
 
 | Key | Action |
 |---|---|
-| `↑` `↓` `←` `→` | move; going up past the high e string reaches the formula, root, comment and name fields |
+| `↑` `↓` `←` `→` | move; going up past the high e string reaches the formula, root, comment and name fields. On the root row, `←` `→` change the root |
 | `tab` | jump between name, comment, root, formula and fretboard |
-| `space` | place or remove a dot (on the open column: toggle open and muted) |
+| `space` | place or remove a dot (on the open column: toggle open and muted); on the formula row, add or remove the highlighted degree |
 | `x` | mute or unmute the string |
 | `1` to `4`, `0` | set or clear the finger number on the string's dot |
 | `enter` | save |
@@ -82,7 +89,9 @@ touch friendly page around it.
 - Tap **New chord**, then tap the fretboard to place dots. Tap above the nut to
   switch a string between open and muted, and tap a dot again to remove it.
   To label a dot with a finger, pick 1 to 4 first and then tap.
-- Tap a chord to view it, edit it, download it as SVG or delete it.
+- Pick a root and tap degrees to set the formula, both optional.
+- Tap a chord to view it, edit it, download it as SVG or delete it. Switch
+  between **Fingers** and **Notes** above the diagram.
 - The menu exports the catalog as a PDF (four chords to an A4 page), backs it
   up as a JSON file, or restores it from one. Restore also reads the command
   line app's `chords/catalog.json`.
